@@ -1,7 +1,188 @@
-// Placeholder — Track B (Agent 2) implements this hook
-// See docs/TRACK_B_GUIDE.md for full specification
+import { useEffect, useRef, useCallback } from 'react';
+import { AR_CONFIG } from '../config/arConfig';
+
+const {
+  GARMENT_SHOULDER_PADDING,
+  GARMENT_X_OVERHANG,
+  GARMENT_Y_NECKLINE,
+} = AR_CONFIG;
+
+/**
+ * useGarmentOverlay — Track B
+ * Renders the segmented garment PNG on the canvas, anchored to buyer's shoulders.
+ *
+ * @param {React.RefObject} canvasRef  — ref to overlay <canvas> element
+ * @param {React.RefObject} videoRef   — ref to buyer <video> element
+ * @param {Array|null}      keypoints  — smoothed MediaPipe NormalizedLandmarkList
+ * @param {string|null}     garmentUrl — URL of segmented garment PNG
+ *
+ * Returns:
+ *   screenshotFn — async function that captures composite (video + overlay) as JPEG
+ */
 export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
-  return {
-    screenshotFn: () => {},
-  };
+  const garmentImageRef = useRef(null);
+  const rafRef = useRef(null);
+  const activeRef = useRef(true);
+
+  // --- Load garment image whenever garmentUrl changes ---
+  useEffect(() => {
+    if (!garmentUrl) {
+      garmentImageRef.current = null;
+      return;
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      garmentImageRef.current = img;
+    };
+    img.onerror = () => {
+      console.warn('[useGarmentOverlay] Failed to load garment image:', garmentUrl);
+      garmentImageRef.current = null;
+    };
+    img.src = garmentUrl;
+  }, [garmentUrl]);
+
+  // --- Render loop ---
+  useEffect(() => {
+    activeRef.current = true;
+
+    function renderFrame() {
+      if (!activeRef.current) return;
+
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
+
+      if (!canvas || !video) {
+        rafRef.current = requestAnimationFrame(renderFrame);
+        return;
+      }
+
+      // Keep canvas in sync with video dimensions
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth || canvas.offsetWidth;
+        canvas.height = video.videoHeight || canvas.offsetHeight;
+      }
+
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width;
+      const H = canvas.height;
+
+      // 1. Clear
+      ctx.clearRect(0, 0, W, H);
+
+      // 2. Skip if no keypoints or no garment
+      const kp = keypoints;
+      const garment = garmentImageRef.current;
+      if (!kp || !garment || W === 0 || H === 0) {
+        rafRef.current = requestAnimationFrame(renderFrame);
+        return;
+      }
+
+      // 3. Extract key pixel coordinates
+      const LS = { x: kp[11].x * W, y: kp[11].y * H };
+      const RS = { x: kp[12].x * W, y: kp[12].y * H };
+      const LH = { x: kp[23].x * W, y: kp[23].y * H };
+      const RH = { x: kp[24].x * W, y: kp[24].y * H };
+
+      // 4. Shoulder width in px
+      const shoulderWidth_px = Math.hypot(LS.x - RS.x, LS.y - RS.y);
+
+      // 5. Torso height in px
+      const midShoulder = { x: (LS.x + RS.x) / 2, y: (LS.y + RS.y) / 2 };
+      const midHip = { x: (LH.x + RH.x) / 2, y: (LH.y + RH.y) / 2 };
+      // (torsoHeight is computed but used implicitly through garment's natural aspect ratio)
+
+      // 6. Scale garment
+      const scaledWidth = shoulderWidth_px * GARMENT_SHOULDER_PADDING;
+      const scaledHeight = garment.naturalHeight * (scaledWidth / garment.naturalWidth);
+
+      // 7. Position
+      const xPos = LS.x - scaledWidth * GARMENT_X_OVERHANG;
+      const yPos = midShoulder.y - scaledHeight * GARMENT_Y_NECKLINE;
+
+      // 8. Draw — subtly fade in on first frame
+      ctx.globalAlpha = 0.92;
+      ctx.drawImage(garment, xPos, yPos, scaledWidth, scaledHeight);
+      ctx.globalAlpha = 1.0;
+
+      rafRef.current = requestAnimationFrame(renderFrame);
+    }
+
+    rafRef.current = requestAnimationFrame(renderFrame);
+
+    return () => {
+      activeRef.current = false;
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      // Clear canvas on unmount
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx?.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    };
+  }, [canvasRef, videoRef, keypoints]);
+
+  // --- Screenshot function ---
+  const screenshotFn = useCallback(() => {
+    const video = videoRef.current;
+    const overlayCanvas = canvasRef.current;
+
+    if (!video || !overlayCanvas) {
+      console.warn('[useGarmentOverlay] screenshotFn: refs not ready');
+      return;
+    }
+
+    const W = video.videoWidth || video.offsetWidth;
+    const H = video.videoHeight || video.offsetHeight;
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = W;
+    tempCanvas.height = H;
+    const ctx = tempCanvas.getContext('2d');
+
+    // 1. Draw video frame
+    ctx.drawImage(video, 0, 0, W, H);
+
+    // 2. Draw garment overlay on top
+    ctx.drawImage(overlayCanvas, 0, 0, W, H);
+
+    // 3. Export as JPEG blob
+    tempCanvas.toBlob(
+      (blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+
+        // Desktop: download link
+        if (!navigator.share) {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `ar-try-on-${Date.now()}.jpg`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        } else {
+          // Mobile: Web Share API
+          const file = new File([blob], `ar-try-on-${Date.now()}.jpg`, { type: 'image/jpeg' });
+          navigator
+            .share({ files: [file], title: 'AR Try-On Snapshot' })
+            .then(() => URL.revokeObjectURL(url))
+            .catch(() => {
+              // Fallback: show download link
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `ar-try-on-${Date.now()}.jpg`;
+              a.click();
+              setTimeout(() => URL.revokeObjectURL(url), 5000);
+            });
+        }
+      },
+      'image/jpeg',
+      0.85
+    );
+  }, [canvasRef, videoRef]);
+
+  return { screenshotFn };
 }

@@ -7,6 +7,7 @@ import { useFrameCapture } from '../../hooks/useFrameCapture';
 import SellerCapturePanel from './SellerCapturePanel';
 import SessionStatusBanner from './SessionStatusBanner';
 import ConsentModal from './ConsentModal';
+import BuyerARPanel from './BuyerARPanel';
 import './ar.css';
 
 /**
@@ -299,13 +300,7 @@ function ARSessionPanelInner({ role = 'seller' }) {
             )}
 
             {sessionState === SESSION_STATES.AR_ACTIVE && consentGiven && (
-              <div className="ar-card">
-                <div className="ar-card__title">AR Try-On</div>
-                <p style={{ color: 'var(--ar-text-muted)', fontSize: 14, margin: 0 }}>
-                  The BuyerARPanel component (Track B / Agent 2) renders here.
-                  It will show the camera feed with the garment overlay.
-                </p>
-              </div>
+              <BuyerARPanel />
             )}
           </>
         )}
