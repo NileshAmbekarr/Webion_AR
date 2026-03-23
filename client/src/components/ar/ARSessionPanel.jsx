@@ -1,40 +1,33 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import AgoraRTC from 'agora-rtc-sdk-ng';
 import { v4 as uuidv4 } from 'uuid';
-import { SessionProvider, useSessionState, SESSION_STATES } from '../../context/SessionContext';
-import { AR_CONFIG } from '../../config/arConfig';
-import { useFrameCapture } from '../../hooks/useFrameCapture';
+import { useSessionState, SESSION_STATES, SessionProvider } from '../context/SessionContext';
+import { AR_CONFIG } from '../config/arConfig';
+import { useFrameCapture } from '../hooks/useFrameCapture';
 import SellerCapturePanel from './SellerCapturePanel';
-import SessionStatusBanner from './SessionStatusBanner';
 import ConsentModal from './ConsentModal';
+import SessionStatusBanner from './SessionStatusBanner';
 import BuyerARPanel from './BuyerARPanel';
-import './ar.css';
 
 /**
- * ARSessionPanel — Main container for the AR session.
- * Manages Agora video call and coordinates seller/buyer panels.
- *
- * In the hackathon demo, both seller and buyer run in the same browser
- * (or separate tabs/devices). This component handles a SINGLE role
- * based on the `role` prop.
+ * ARSessionPanelInner — The main AR session component (must be inside SessionProvider).
  */
-function ARSessionPanelInner({ role = 'seller' }) {
+function ARSessionPanelInner({ role }) {
   const {
     sessionId, setSessionId,
     sessionState, transitionTo,
-    setCapturedGarmentUrl,
-    endSession,
-    error,
-    rtmChannelRef,
+    capturedGarmentUrl, setCapturedGarmentUrl,
+    endSession, error,
   } = useSessionState();
 
-  // Agora state
-  const [client] = useState(() => AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' }));
+  const clientRef = useRef(AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' }));
+  const client = clientRef.current;
+
   const [joined, setJoined] = useState(false);
-  const [remoteUsers, setRemoteUsers] = useState([]);
-  const [localVideoTrack, setLocalVideoTrack] = useState(null);
   const [channelName, setChannelName] = useState('');
   const [inputChannel, setInputChannel] = useState('webion-ar-demo');
+  const [localVideoTrack, setLocalVideoTrack] = useState(null);
+  const [remoteUsers, setRemoteUsers] = useState([]);
   const [isJoining, setIsJoining] = useState(false);
 
   // Video refs
@@ -54,7 +47,21 @@ function ARSessionPanelInner({ role = 'seller' }) {
       : `${AR_CONFIG.API_BASE_URL}${result.png_url}`;
     setCapturedGarmentUrl(fullUrl);
     transitionTo(SESSION_STATES.AR_ACTIVE, { garmentUrl: fullUrl });
-  }, [setCapturedGarmentUrl, transitionTo]);
+
+    // Broadcast garment URL to buyer via Agora stream message
+    try {
+      const msg = JSON.stringify({
+        type: 'GARMENT_READY',
+        garmentUrl: fullUrl,
+        state: SESSION_STATES.AR_ACTIVE,
+      });
+      const encoder = new TextEncoder();
+      client.sendStreamMessage(encoder.encode(msg));
+      console.log('[Sync] 📤 Sent GARMENT_READY to buyer');
+    } catch (e) {
+      console.warn('[Sync] Failed to send stream message:', e);
+    }
+  }, [setCapturedGarmentUrl, transitionTo, client]);
 
   const handleCaptureError = useCallback((errMsg) => {
     transitionTo(SESSION_STATES.ERROR, { error: errMsg });
@@ -85,24 +92,40 @@ function ARSessionPanelInner({ role = 'seller' }) {
 
     const handleUserLeft = (user) => {
       setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
-      // Call ended — cleanup
       endSession();
+    };
+
+    // Listen for stream messages from seller (buyer receives garment URL)
+    const handleStreamMessage = (uid, data) => {
+      try {
+        const decoder = new TextDecoder();
+        const msg = JSON.parse(decoder.decode(data));
+        console.log('[Sync] 📥 Received message from', uid, ':', msg);
+
+        if (msg.type === 'GARMENT_READY' && role === 'buyer') {
+          console.log('[Sync] 🎯 Garment ready! URL:', msg.garmentUrl);
+          setCapturedGarmentUrl(msg.garmentUrl);
+          transitionTo(SESSION_STATES.AR_ACTIVE, { garmentUrl: msg.garmentUrl });
+        }
+      } catch (e) {
+        console.warn('[Sync] Failed to parse stream message:', e);
+      }
     };
 
     client.on('user-published', handleUserPublished);
     client.on('user-unpublished', handleUserUnpublished);
     client.on('user-left', handleUserLeft);
+    client.on('stream-message', handleStreamMessage);
 
     return () => {
       client.off('user-published', handleUserPublished);
       client.off('user-unpublished', handleUserUnpublished);
       client.off('user-left', handleUserLeft);
+      client.off('stream-message', handleStreamMessage);
     };
-  }, [client, endSession]);
+  }, [client, endSession, role, setCapturedGarmentUrl, transitionTo]);
 
   // Play remote video when user subscribes
-  // Use a delayed retry to handle the race condition where the ref
-  // isn't ready on the first render cycle.
   useEffect(() => {
     const playRemote = () => {
       if (remoteUsers.length > 0 && remoteVideoRef.current) {
@@ -113,7 +136,6 @@ function ARSessionPanelInner({ role = 'seller' }) {
       }
     };
     playRemote();
-    // Retry after a short delay in case the DOM isn't ready
     const timer = setTimeout(playRemote, 300);
     return () => clearTimeout(timer);
   }, [remoteUsers]);
@@ -139,9 +161,16 @@ function ARSessionPanelInner({ role = 'seller' }) {
 
     setIsJoining(true);
     try {
-      // Generate a numeric UID
       const uid = Math.floor(Math.random() * 100000);
       await client.join(appId, inputChannel, AR_CONFIG.AGORA_TEMP_TOKEN, uid);
+
+      // Create data stream for seller→buyer messaging
+      try {
+        await client.createDataStream({ ordered: true, reliable: true });
+        console.log('[Sync] ✅ Data stream created');
+      } catch (e) {
+        console.warn('[Sync] Data stream creation failed (may already exist):', e);
+      }
 
       // Create and publish local camera track
       const videoTrack = await AgoraRTC.createCameraVideoTrack({
