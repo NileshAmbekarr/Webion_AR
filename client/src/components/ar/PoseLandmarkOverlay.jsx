@@ -100,14 +100,14 @@ export default function PoseLandmarkOverlay({ videoRef }) {
 
       ctx.strokeStyle = conn.color;
       ctx.beginPath();
-      ctx.moveTo(a.x * W, a.y * H);
-      ctx.lineTo(b.x * W, b.y * H);
+      ctx.moveTo((1 - a.x) * W, a.y * H);
+      ctx.lineTo((1 - b.x) * W, b.y * H);
       ctx.stroke();
     }
 
     // Draw keypoint dots
     for (let i = 0; i < Math.min(kp.length, 33); i++) {
-      const px = kp[i].x * W;
+      const px = (1 - kp[i].x) * W;  // Flip X to match Agora's mirrored video
       const py = kp[i].y * H;
       const vis = kp[i].visibility || 0;
       if (vis < 0.3) continue;
@@ -141,7 +141,7 @@ export default function PoseLandmarkOverlay({ videoRef }) {
 
     // Center crosshair (midpoint between shoulders)
     if (kp[11] && kp[12]) {
-      const mx = ((kp[11].x + kp[12].x) / 2) * W;
+      const mx = (1 - (kp[11].x + kp[12].x) / 2) * W;  // Flip X
       const my = ((kp[11].y + kp[12].y) / 2) * H;
       ctx.fillStyle = '#ff4444';
       ctx.beginPath();

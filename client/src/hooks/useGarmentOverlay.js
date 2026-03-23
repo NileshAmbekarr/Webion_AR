@@ -79,18 +79,17 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
         return;
       }
 
-      // 3. Extract key pixel coordinates
-      const LS = { x: kp[11].x * W, y: kp[11].y * H };
-      const RS = { x: kp[12].x * W, y: kp[12].y * H };
-      const LH = { x: kp[23].x * W, y: kp[23].y * H };
-      const RH = { x: kp[24].x * W, y: kp[24].y * H };
+      // 3. Extract key pixel coordinates (flip X to match Agora's mirrored video)
+      const LS = { x: (1 - kp[11].x) * W, y: kp[11].y * H };
+      const RS = { x: (1 - kp[12].x) * W, y: kp[12].y * H };
+      const LH = { x: (1 - kp[23].x) * W, y: kp[23].y * H };
+      const RH = { x: (1 - kp[24].x) * W, y: kp[24].y * H };
 
       // 4. Shoulder width in px
       const shoulderWidth_px = Math.hypot(LS.x - RS.x, LS.y - RS.y);
 
-      // 5. Torso height in px
+      // 5. Torso center
       const midShoulder = { x: (LS.x + RS.x) / 2, y: (LS.y + RS.y) / 2 };
-      const midHip = { x: (LH.x + RH.x) / 2, y: (LH.y + RH.y) / 2 };
 
       // ── Draw garment (only if loaded) ──
       if (garment) {
@@ -103,68 +102,6 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
         ctx.drawImage(garment, xPos, yPos, scaledWidth, scaledHeight);
         ctx.globalAlpha = 1.0;
       }
-
-      // ── DEBUG: Draw keypoint skeleton ──
-      // Torso connections
-      ctx.strokeStyle = '#00ff88';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(LS.x, LS.y); ctx.lineTo(RS.x, RS.y); // shoulders
-      ctx.moveTo(LS.x, LS.y); ctx.lineTo(LH.x, LH.y); // left side
-      ctx.moveTo(RS.x, RS.y); ctx.lineTo(RH.x, RH.y); // right side
-      ctx.moveTo(LH.x, LH.y); ctx.lineTo(RH.x, RH.y); // hips
-      ctx.stroke();
-
-      // Arm connections
-      if (kp[13] && kp[14] && kp[15] && kp[16]) {
-        ctx.strokeStyle = '#ffaa00';
-        ctx.beginPath();
-        ctx.moveTo(LS.x, LS.y); ctx.lineTo(kp[13].x * W, kp[13].y * H); // L shoulder → L elbow
-        ctx.moveTo(kp[13].x * W, kp[13].y * H); ctx.lineTo(kp[15].x * W, kp[15].y * H); // L elbow → L wrist
-        ctx.moveTo(RS.x, RS.y); ctx.lineTo(kp[14].x * W, kp[14].y * H); // R shoulder → R elbow
-        ctx.moveTo(kp[14].x * W, kp[14].y * H); ctx.lineTo(kp[16].x * W, kp[16].y * H); // R elbow → R wrist
-        ctx.stroke();
-      }
-
-      // Draw all 33 keypoints as dots
-      const keyLabels = {
-        0: 'Nose', 7: 'L Ear', 8: 'R Ear',
-        11: 'L Shoulder', 12: 'R Shoulder',
-        13: 'L Elbow', 14: 'R Elbow',
-        15: 'L Wrist', 16: 'R Wrist',
-        23: 'L Hip', 24: 'R Hip',
-        25: 'L Knee', 26: 'R Knee',
-      };
-      for (let i = 0; i < Math.min(kp.length, 33); i++) {
-        const px = kp[i].x * W;
-        const py = kp[i].y * H;
-        const vis = kp[i].visibility || 0;
-        if (vis < 0.3) continue; // skip low-confidence keypoints
-
-        // Color: green=key joints, orange=arms, gray=other
-        const isKey = [11, 12, 23, 24].includes(i);
-        const isArm = [13, 14, 15, 16].includes(i);
-        ctx.fillStyle = isKey ? '#00ff88' : isArm ? '#ffaa00' : 'rgba(255,255,255,0.5)';
-        ctx.beginPath();
-        ctx.arc(px, py, isKey ? 6 : 4, 0, 2 * Math.PI);
-        ctx.fill();
-
-        // Labels for key joints
-        if (keyLabels[i]) {
-          ctx.fillStyle = '#fff';
-          ctx.font = '10px Inter, sans-serif';
-          ctx.fillText(keyLabels[i], px + 8, py + 3);
-        }
-      }
-
-      // Center crosshair at midShoulder
-      ctx.fillStyle = '#ff4444';
-      ctx.beginPath();
-      ctx.arc(midShoulder.x, midShoulder.y, 4, 0, 2 * Math.PI);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = '10px Inter, sans-serif';
-      ctx.fillText('Center', midShoulder.x + 6, midShoulder.y - 6);
 
       rafRef.current = requestAnimationFrame(renderFrame);
     }
