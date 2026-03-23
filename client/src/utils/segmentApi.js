@@ -5,27 +5,36 @@ import { AR_CONFIG } from '../config/arConfig';
  * Tries the real backend first, falls back to mock if it fails.
  */
 export async function segmentLiveFrame(jpegBlob, sessionId) {
+  const url = `${AR_CONFIG.API_BASE_URL}${AR_CONFIG.SEGMENT_ENDPOINT}`;
+  console.log(`[segmentApi] 📤 Sending frame to ${url} (${(jpegBlob.size / 1024).toFixed(1)}KB, session=${sessionId})`);
+
   // Try real API first
   try {
     const formData = new FormData();
     formData.append('frame', jpegBlob, 'frame.jpg');
     formData.append('session_id', sessionId);
 
-    const res = await fetch(`${AR_CONFIG.API_BASE_URL}${AR_CONFIG.SEGMENT_ENDPOINT}`, {
+    const res = await fetch(url, {
       method: 'POST',
       body: formData,
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success) {
-        console.log('[segmentApi] ✅ Real API success:', data.png_url);
-        return data;
+    console.log(`[segmentApi] Response status: ${res.status}`);
+    const data = await res.json();
+    console.log('[segmentApi] Response body:', data);
+
+    if (res.ok && data.success) {
+      // Build the full URL for backend-served files
+      let pngUrl = data.png_url;
+      if (pngUrl && pngUrl.startsWith('/ar-temp/')) {
+        pngUrl = `${AR_CONFIG.API_BASE_URL}${pngUrl}`;
       }
+      console.log('[segmentApi] ✅ Real API success:', pngUrl);
+      return { ...data, png_url: pngUrl };
     }
-    console.warn('[segmentApi] Real API failed, using mock fallback');
+    console.warn('[segmentApi] Real API returned failure:', data);
   } catch (e) {
-    console.warn('[segmentApi] Real API unreachable, using mock fallback:', e.message);
+    console.warn('[segmentApi] Real API error:', e.message);
   }
 
   // MOCK fallback — simulates 1-second processing delay

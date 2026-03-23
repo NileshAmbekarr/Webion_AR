@@ -289,15 +289,19 @@ function ARSessionPanelInner({ role }) {
   }
 
   return (
-    <div className="ar-session-panel">
-      {/* Left side — Seller/local video + capture controls */}
+    <div className="ar-session-panel">  {/* Left side — local video + capture/overlay controls */}
       <div className="ar-session-panel__seller">
         <div className="ar-card" style={{ padding: 0 }}>
-          <div className="ar-video-container">
+          <div className="ar-video-container" style={{ position: 'relative' }}>
             <div ref={localVideoRef} style={{ width: '100%', height: '100%' }} />
             <span className="ar-video-label">
               {role === 'seller' ? '📹 You (Seller)' : '📹 You (Buyer)'}
             </span>
+
+            {/* Buyer: garment overlay sits INSIDE the video container */}
+            {role === 'buyer' && sessionState === SESSION_STATES.AR_ACTIVE && consentGiven && (
+              <BuyerARPanel videoRef={localVideoRef} />
+            )}
           </div>
         </div>
 
@@ -318,7 +322,6 @@ function ARSessionPanelInner({ role }) {
       <div className="ar-session-panel__buyer">
         <div className="ar-card" style={{ padding: 0 }}>
           <div className="ar-video-container">
-            {/* Always render the remote video container so the ref is stable */}
             <div
               ref={remoteVideoRef}
               style={{
@@ -355,10 +358,6 @@ function ARSessionPanelInner({ role }) {
                 onAccept={() => setConsentGiven(true)}
                 onDecline={() => setConsentGiven(false)}
               />
-            )}
-
-            {sessionState === SESSION_STATES.AR_ACTIVE && consentGiven && (
-              <BuyerARPanel videoRef={localVideoRef} />
             )}
           </>
         )}

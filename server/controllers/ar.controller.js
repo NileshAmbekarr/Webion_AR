@@ -26,6 +26,7 @@ exports.segmentLive = async (req, res) => {
 
   try {
     // 2. Forward the uploaded file to the Python Flask service
+    console.log(`[AR] 📤 Forwarding frame to Flask: ${req.file.path} (${(req.file.size / 1024).toFixed(1)}KB)`);
     const formData = new FormData();
     formData.append('frame', fs.createReadStream(req.file.path));
     formData.append('session_id', sessionId);
@@ -35,9 +36,11 @@ exports.segmentLive = async (req, res) => {
       formData,
       {
         headers: formData.getHeaders(),
-        timeout: 15000, // 15 second timeout
+        timeout: 30000, // 30 second timeout (REMBG can be slow)
       }
     );
+
+    console.log(`[AR] 🔬 Flask response:`, pythonRes.data);
 
     // 3. Delete the uploaded JPEG (no longer needed)
     if (fs.existsSync(req.file.path)) {
@@ -47,6 +50,7 @@ exports.segmentLive = async (req, res) => {
     // 4. Return the PNG URL to the browser
     if (pythonRes.data.success) {
       const pngUrl = `/ar-temp/${sessionId}/${pythonRes.data.filename}`;
+      console.log(`[AR] ✅ Segmentation success: ${pngUrl}`);
       return res.json({
         success: true,
         png_url: pngUrl,
