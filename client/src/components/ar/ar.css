@@ -1,0 +1,409 @@
+/* ============================================
+   Webion AR — Component Styles
+   Premium dark theme with glassmorphism
+   ============================================ */
+
+:root {
+  --ar-bg: rgba(15, 15, 25, 0.92);
+  --ar-bg-glass: rgba(25, 25, 45, 0.8);
+  --ar-surface: rgba(40, 40, 70, 0.6);
+  --ar-border: rgba(100, 100, 180, 0.2);
+  --ar-text: #e8e8f0;
+  --ar-text-muted: #8a8ab0;
+  --ar-accent: #6366f1;
+  --ar-accent-glow: rgba(99, 102, 241, 0.3);
+  --ar-success: #22c55e;
+  --ar-warning: #f59e0b;
+  --ar-danger: #ef4444;
+  --ar-radius: 12px;
+  --ar-radius-sm: 8px;
+  --ar-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ---- Layout ---- */
+.ar-session-panel {
+  display: flex;
+  gap: 20px;
+  padding: 20px;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0f0f2d 100%);
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  color: var(--ar-text);
+}
+
+.ar-session-panel__seller {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ar-session-panel__buyer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---- Glass Card ---- */
+.ar-card {
+  background: var(--ar-bg-glass);
+  border: 1px solid var(--ar-border);
+  border-radius: var(--ar-radius);
+  padding: 20px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: var(--ar-transition);
+}
+
+.ar-card:hover {
+  border-color: rgba(100, 100, 180, 0.35);
+}
+
+.ar-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--ar-text-muted);
+  margin-bottom: 16px;
+}
+
+/* ---- Video Container ---- */
+.ar-video-container {
+  position: relative;
+  border-radius: var(--ar-radius);
+  overflow: hidden;
+  background: #000;
+  aspect-ratio: 16/9;
+}
+
+.ar-video-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ar-video-label {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  backdrop-filter: blur(4px);
+}
+
+/* ---- Enforcement Indicators ---- */
+.enforcement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.enforcement-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--ar-radius-sm);
+  background: var(--ar-surface);
+  transition: var(--ar-transition);
+}
+
+.enforcement-item--passed {
+  border-left: 3px solid var(--ar-success);
+}
+
+.enforcement-item--failed {
+  border-left: 3px solid var(--ar-danger);
+}
+
+.enforcement-item--pending {
+  border-left: 3px solid var(--ar-warning);
+}
+
+.enforcement-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.enforcement-icon--passed {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--ar-success);
+}
+
+.enforcement-icon--failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--ar-danger);
+}
+
+.enforcement-icon--pending {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--ar-warning);
+  animation: pulse-spin 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-spin {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.enforcement-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.enforcement-detail {
+  font-size: 12px;
+  color: var(--ar-text-muted);
+  margin-left: auto;
+}
+
+/* ---- Countdown Bar ---- */
+.countdown-bar {
+  position: relative;
+  height: 40px;
+  border-radius: var(--ar-radius-sm);
+  overflow: hidden;
+  background: var(--ar-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.countdown-bar__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--ar-accent), #818cf8);
+  transition: width 0.5s linear;
+  border-radius: var(--ar-radius-sm);
+}
+
+.countdown-bar__text {
+  position: relative;
+  z-index: 1;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* ---- Buttons ---- */
+.ar-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: var(--ar-radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--ar-transition);
+  letter-spacing: 0.3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.ar-btn--primary {
+  background: linear-gradient(135deg, var(--ar-accent), #818cf8);
+  color: white;
+  box-shadow: 0 4px 14px var(--ar-accent-glow);
+}
+
+.ar-btn--primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px var(--ar-accent-glow);
+}
+
+.ar-btn--primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ar-btn--secondary {
+  background: var(--ar-surface);
+  color: var(--ar-text);
+  border: 1px solid var(--ar-border);
+}
+
+.ar-btn--secondary:hover {
+  background: rgba(60, 60, 100, 0.6);
+}
+
+.ar-btn--danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--ar-danger);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.ar-btn--danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.ar-btn--full {
+  width: 100%;
+}
+
+/* ---- Consent Modal ---- */
+.consent-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.consent-modal {
+  background: var(--ar-bg);
+  border: 1px solid var(--ar-border);
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 420px;
+  width: 90%;
+  backdrop-filter: blur(16px);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.consent-modal__icon {
+  font-size: 40px;
+  margin-bottom: 16px;
+}
+
+.consent-modal__title {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.consent-modal__text {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ar-text-muted);
+  margin-bottom: 24px;
+}
+
+.consent-modal__highlight {
+  color: var(--ar-success);
+  font-weight: 500;
+}
+
+.consent-modal__actions {
+  display: flex;
+  gap: 12px;
+}
+
+/* ---- Session Status Banner ---- */
+.session-banner {
+  padding: 14px 18px;
+  border-radius: var(--ar-radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  animation: fadeIn 0.3s ease;
+}
+
+.session-banner--info {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+}
+
+.session-banner--success {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  color: var(--ar-success);
+}
+
+.session-banner--warning {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  color: var(--ar-warning);
+}
+
+.session-banner--error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: var(--ar-danger);
+}
+
+.session-banner__spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--ar-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Rules text ---- */
+.ar-rules {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ar-border);
+}
+
+.ar-rules__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ar-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.ar-rules__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ar-rules__list li {
+  font-size: 13px;
+  color: var(--ar-text-muted);
+  padding: 3px 0;
+}
+
+.ar-rules__list li::before {
+  content: '·';
+  margin-right: 8px;
+  color: var(--ar-accent);
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+  .ar-session-panel {
+    flex-direction: column;
+  }
+}
