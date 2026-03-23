@@ -8,6 +8,7 @@ import SellerCapturePanel from './SellerCapturePanel';
 import ConsentModal from './ConsentModal';
 import SessionStatusBanner from './SessionStatusBanner';
 import BuyerARPanel from './BuyerARPanel';
+import PoseLandmarkOverlay from './PoseLandmarkOverlay';
 
 // Module-level Agora client singleton — prevents duplicate clients on React re-renders
 const agoraClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
@@ -297,6 +298,11 @@ function ARSessionPanelInner({ role }) {
             <span className="ar-video-label">
               {role === 'seller' ? '📹 You (Seller)' : '📹 You (Buyer)'}
             </span>
+
+            {/* Buyer: always-on body landmark overlay */}
+            {role === 'buyer' && (
+              <PoseLandmarkOverlay videoRef={localVideoRef} />
+            )}
 
             {/* Buyer: garment overlay sits INSIDE the video container */}
             {role === 'buyer' && sessionState === SESSION_STATES.AR_ACTIVE && consentGiven && (
