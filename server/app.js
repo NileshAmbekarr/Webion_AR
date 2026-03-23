@@ -39,6 +39,10 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'webion-ar-backend' });
 });
 
+// --- Cleanup job ---
+const { startCleanupJob } = require('./scripts/cleanup');
+startCleanupJob();
+
 // --- Start server ---
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {

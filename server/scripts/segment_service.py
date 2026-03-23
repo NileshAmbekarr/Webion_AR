@@ -12,6 +12,7 @@ import io
 import os
 import uuid
 import time
+import tempfile
 
 app = Flask(__name__)
 
@@ -21,7 +22,7 @@ print("[Webion AR] Loading REMBG model (isnet-general-use)...")
 rembg_session = new_session("isnet-general-use")
 print("[Webion AR] REMBG model loaded successfully.")
 
-AR_TEMP_DIR = os.environ.get('AR_TEMP_DIR', os.path.join(os.path.sep, 'tmp', 'ar_sessions'))
+AR_TEMP_DIR = os.environ.get('AR_TEMP_DIR', os.path.join(tempfile.gettempdir(), 'ar_sessions'))
 
 
 @app.route('/health', methods=['GET'])
