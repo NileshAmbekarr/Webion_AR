@@ -13,7 +13,7 @@ export default function BuyerARPanel({ videoRef }) {
   const { capturedGarmentUrl } = useSessionState();
   const canvasRef = useRef(null);
   const [useFallback, setUseFallback] = useState(false);
-  const [garmentScale, setGarmentScale] = useState(60);
+  const [garmentScale, setGarmentScale] = useState(80); // percentage of container width
   const [garmentLoaded, setGarmentLoaded] = useState(false);
   const [garmentError, setGarmentError] = useState(false);
 
