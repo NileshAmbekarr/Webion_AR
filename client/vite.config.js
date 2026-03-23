@@ -7,6 +7,18 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     strictPort: true,
-    allowedHosts: true
+    allowedHosts: true,
+    // Proxy API requests to the backend — critical for Cloudflare tunnel
+    // The tunnel only exposes port 5173, not 3001
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/ar-temp': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
   }
 });

@@ -44,7 +44,7 @@ export const AR_CONFIG = {
   },
 
   // --- Backend (Track D) ---
-  API_BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:3001',
+  API_BASE_URL: '', // Use relative URLs — Vite proxy forwards /api/* to localhost:3001
   SEGMENT_ENDPOINT: '/api/ar/segment-live',
   SESSION_DELETE_ENDPOINT: '/api/ar/sessions',
   SESSION_STATUS_ENDPOINT: '/api/ar/sessions',
