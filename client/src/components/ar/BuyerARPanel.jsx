@@ -1,63 +1,18 @@
-import { useRef, useState, useMemo } from 'react';
-import { usePoseDetection }   from '../../hooks/usePoseDetection';
-import { useGarmentOverlay }  from '../../hooks/useGarmentOverlay';
+import { useRef, useState } from 'react';
 import { useSessionState }    from '../../context/SessionContext';
-import { AR_CONFIG }          from '../../config/arConfig';
-import SizeCard    from './SizeCard';
 import './buyer-ar.css';
 
-const {
-  BUYER_TOO_CLOSE_THRESHOLD,
-  BUYER_TOO_FAR_THRESHOLD,
-} = AR_CONFIG;
-
-const IS_DEV = import.meta.env.DEV;
-
 /**
- * BuyerARPanel — Track B
- * Orchestrates the buyer's pose detection, garment overlay,
- * size card, and screenshot functionality.
- * 
- * IMPORTANT: Does NOT create its own camera — uses the Agora local video
- * ref passed from ARSessionPanel to avoid conflicts.
+ * BuyerARPanel — Hackathon demo version
+ * Shows the segmented garment image overlaid on the buyer's video area.
+ * Simplified: no MediaPipe pose detection (unreliable with WASM conflicts).
+ * The garment is displayed as a centered, semi-transparent overlay.
  */
 export default function BuyerARPanel({ videoRef }) {
   const { capturedGarmentUrl } = useSessionState();
   const garmentUrl = capturedGarmentUrl;
-
-  // ── Pose detection (uses the same video element Agora plays into) ─────
-  const { keypoints, isModelLoaded, fps } = usePoseDetection(videoRef, !!garmentUrl);
-
-  const canvasRef = useRef(null);
-  const { screenshotFn } = useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl);
-
-  // ── Distance detection ─────────────────────────────────────────────────
-  const distanceWarning = useMemo(() => {
-    if (!keypoints || !canvasRef.current) return null;
-
-    const canvas = canvasRef.current;
-    const W = canvas.width || canvas.offsetWidth || 1;
-    const LS = keypoints[11];
-    const RS = keypoints[12];
-    if (!LS || !RS) return null;
-
-    const shoulderPx = Math.hypot((LS.x - RS.x) * W, (LS.y - RS.y) * W);
-    const ratio = shoulderPx / W;
-
-    if (ratio > BUYER_TOO_CLOSE_THRESHOLD) return '🔍 Move further back';
-    if (ratio < BUYER_TOO_FAR_THRESHOLD)  return '↔️ Move closer to camera';
-    return null;
-  }, [keypoints]);
-
-  // ── Buyer shoulder px (for SizeCard) ───────────────────────────────────
-  const buyerShoulderPx = useMemo(() => {
-    if (!keypoints || !canvasRef.current) return 0;
-    const W = canvasRef.current.width || canvasRef.current.offsetWidth || 1;
-    const LS = keypoints[11];
-    const RS = keypoints[12];
-    if (!LS || !RS) return 0;
-    return Math.hypot((LS.x - RS.x) * W, (LS.y - RS.y) * W);
-  }, [keypoints]);
+  const [garmentLoaded, setGarmentLoaded] = useState(false);
+  const [garmentError, setGarmentError] = useState(false);
 
   if (!garmentUrl) {
     return (
@@ -67,63 +22,125 @@ export default function BuyerARPanel({ videoRef }) {
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────
+  const handleScreenshot = () => {
+    // Get the Agora video element inside the ref div
+    const container = videoRef?.current;
+    if (!container) return;
+
+    const videoEl = container.querySelector('video');
+    if (!videoEl) {
+      console.warn('[BuyerARPanel] No video element found in container');
+      return;
+    }
+
+    const W = videoEl.videoWidth || 640;
+    const H = videoEl.videoHeight || 480;
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = W;
+    tempCanvas.height = H;
+    const ctx = tempCanvas.getContext('2d');
+
+    // Draw video frame
+    ctx.drawImage(videoEl, 0, 0, W, H);
+
+    // Draw garment overlay (centered)
+    if (garmentLoaded) {
+      const img = document.querySelector('.buyer-ar-garment-img');
+      if (img) {
+        const scale = 0.6;
+        const gW = W * scale;
+        const gH = (img.naturalHeight / img.naturalWidth) * gW;
+        const x = (W - gW) / 2;
+        const y = H * 0.15;
+        ctx.globalAlpha = 0.85;
+        ctx.drawImage(img, x, y, gW, gH);
+        ctx.globalAlpha = 1.0;
+      }
+    }
+
+    tempCanvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ar-try-on-${Date.now()}.jpg`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }, 'image/jpeg', 0.85);
+  };
+
   return (
     <div className="buyer-ar-panel">
-      {/* Garment overlay canvas sits on top of the buyer's existing video */}
-      <div className="buyer-ar-viewport" style={{ position: 'relative' }}>
-        <canvas
-          ref={canvasRef}
-          className="buyer-ar-canvas"
-          aria-hidden="true"
+      <div className="buyer-ar-viewport" style={{ position: 'relative', minHeight: 200 }}>
+        {/* Garment overlay image */}
+        <img
+          src={garmentUrl}
+          alt="Garment overlay"
+          className="buyer-ar-garment-img"
+          crossOrigin="anonymous"
+          onLoad={() => {
+            setGarmentLoaded(true);
+            setGarmentError(false);
+            console.log('[BuyerARPanel] ✅ Garment image loaded:', garmentUrl);
+          }}
+          onError={() => {
+            setGarmentError(true);
+            console.warn('[BuyerARPanel] ❌ Failed to load garment:', garmentUrl);
+          }}
           style={{
             position: 'absolute',
-            top: 0, left: 0,
-            width: '100%', height: '100%',
-            pointerEvents: 'none',
+            top: '15%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '60%',
+            opacity: garmentLoaded ? 0.85 : 0,
             zIndex: 10,
+            pointerEvents: 'none',
+            mixBlendMode: 'normal',
+            transition: 'opacity 0.3s ease',
           }}
         />
 
-        {/* Model loading indicator */}
-        {!isModelLoaded && (
+        {/* Status messages */}
+        {!garmentLoaded && !garmentError && (
           <div className="buyer-ar-overlay-message">
             <div className="spinner" />
-            <p>Loading pose model…</p>
+            <p>Loading garment overlay…</p>
           </div>
         )}
 
-        {/* Distance warning */}
-        {distanceWarning && isModelLoaded && (
-          <div className="buyer-ar-distance-warning" role="alert">
-            {distanceWarning}
+        {garmentError && (
+          <div className="buyer-ar-overlay-message error">
+            <p>❌ Failed to load garment image</p>
           </div>
         )}
 
-        {/* Dev debug bar */}
-        {IS_DEV && (
-          <div className="buyer-ar-debug">
-            keypoints={keypoints ? keypoints.length : 0} &nbsp;|&nbsp; fps={fps} &nbsp;|&nbsp;
-            model={isModelLoaded ? '✓' : '…'}
+        {garmentLoaded && (
+          <div style={{
+            position: 'absolute',
+            bottom: 8,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(0,200,100,0.85)',
+            color: '#fff',
+            padding: '4px 12px',
+            borderRadius: 12,
+            fontSize: 12,
+            fontWeight: 600,
+            zIndex: 20,
+          }}>
+            ✨ AR Try-On Active
           </div>
         )}
       </div>
 
-      {/* ─── Size card ────────────────────────────────────── */}
-      <SizeCard
-        garmentShoulderCm={null}
-        garmentChestCm={null}
-        garmentLengthCm={null}
-        buyerShoulderPx={buyerShoulderPx}
-        videoWidthPx={canvasRef.current?.width ?? 0}
-      />
-
-      {/* ─── Screenshot button ────────────────────────────── */}
+      {/* Screenshot button */}
       <button
         id="buyer-ar-screenshot-btn"
         className="buyer-ar-screenshot-btn"
-        onClick={screenshotFn}
-        disabled={!isModelLoaded}
+        onClick={handleScreenshot}
+        disabled={!garmentLoaded}
         aria-label="Capture AR try-on screenshot"
       >
         📷 Screenshot

@@ -9,6 +9,9 @@ import ConsentModal from './ConsentModal';
 import SessionStatusBanner from './SessionStatusBanner';
 import BuyerARPanel from './BuyerARPanel';
 
+// Module-level Agora client singleton — prevents duplicate clients on React re-renders
+const agoraClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+
 /**
  * ARSessionPanelInner — The main AR session component (must be inside SessionProvider).
  */
@@ -20,8 +23,7 @@ function ARSessionPanelInner({ role }) {
     endSession, error,
   } = useSessionState();
 
-  const clientRef = useRef(AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' }));
-  const client = clientRef.current;
+  const client = agoraClient;
 
   const [joined, setJoined] = useState(false);
   const [channelName, setChannelName] = useState('');
@@ -220,6 +222,13 @@ function ARSessionPanelInner({ role }) {
 
   // ---- Buyer consent ----
   const [consentGiven, setConsentGiven] = useState(false);
+
+  // Reset consent when entering AR_ACTIVE (so modal always shows)
+  useEffect(() => {
+    if (sessionState === SESSION_STATES.AR_ACTIVE) {
+      setConsentGiven(false);
+    }
+  }, [sessionState]);
 
   // ---- Render ----
   if (!joined) {
