@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import AgoraRTC from 'agora-rtc-sdk-ng';
 import { v4 as uuidv4 } from 'uuid';
-import { useSessionState, SESSION_STATES, SessionProvider } from '../context/SessionContext';
-import { AR_CONFIG } from '../config/arConfig';
-import { useFrameCapture } from '../hooks/useFrameCapture';
+import { useSessionState, SESSION_STATES, SessionProvider } from '../../context/SessionContext';
+import { AR_CONFIG } from '../../config/arConfig';
+import { useFrameCapture } from '../../hooks/useFrameCapture';
 import SellerCapturePanel from './SellerCapturePanel';
 import ConsentModal from './ConsentModal';
 import SessionStatusBanner from './SessionStatusBanner';
