@@ -74,20 +74,31 @@ def segment():
         # Run REMBG segmentation (model already loaded)
         output_data = remove(input_data, session=rembg_session)
 
-        # Post-process: crop to torso region (remove head & legs)
+        # Open the segmented image
         img = Image.open(io.BytesIO(output_data))
         w, h = img.size
+        print(f"[Webion AR] Raw segmentation: {w}x{h}")
 
-        crop_top = int(h * CROP_TOP_RATIO)
-        crop_bottom = int(h * (1 - CROP_BOTTOM_RATIO))
-        img_cropped = img.crop((0, crop_top, w, crop_bottom))
-
-        # Auto-trim transparent edges
-        bbox = img_cropped.getbbox()
+        # Auto-trim transparent edges FIRST (before any crop)
+        bbox = img.getbbox()
         if bbox:
-            img_cropped = img_cropped.crop(bbox)
+            img = img.crop(bbox)
+            w, h = img.size
+            print(f"[Webion AR] After auto-trim: {w}x{h}")
+        else:
+            print("[Webion AR] ⚠️ Image is fully transparent after segmentation — saving as-is")
 
-        print(f"[Webion AR] Segmented: {w}x{h} → cropped to {img_cropped.size[0]}x{img_cropped.size[1]}")
+        # Optional: crop to torso region (remove head & legs)
+        if CROP_TOP_RATIO > 0 or CROP_BOTTOM_RATIO > 0:
+            crop_top = int(h * CROP_TOP_RATIO)
+            crop_bottom = int(h * (1 - CROP_BOTTOM_RATIO))
+            if crop_bottom > crop_top + 20:  # At least 20px tall after crop
+                img = img.crop((0, crop_top, w, crop_bottom))
+                print(f"[Webion AR] After torso crop: {img.size[0]}x{img.size[1]}")
+            else:
+                print(f"[Webion AR] ⚠️ Skipping crop — would result in too-small image")
+
+        print(f"[Webion AR] Final garment size: {img.size[0]}x{img.size[1]}")
 
         # Create session directory
         session_dir = os.path.join(AR_TEMP_DIR, session_id)
@@ -98,7 +109,7 @@ def segment():
         output_filename = f"{file_uuid}.png"
         output_path = os.path.join(session_dir, output_filename)
 
-        img_cropped.save(output_path, 'PNG')
+        img.save(output_path, 'PNG')
 
         processing_time_ms = int((time.time() - start_time) * 1000)
         print(f"[Webion AR] ✅ Done in {processing_time_ms}ms → {output_filename}")
