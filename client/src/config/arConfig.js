@@ -10,8 +10,8 @@ export const AR_CONFIG = {
   SHARPNESS_THRESHOLD: 12,           // Mean pixel delta — higher = sharper
   MIN_LUMINANCE: 80,                 // 0–255 scale, below = too dark
   MAX_LUMINANCE: 220,                // 0–255 scale, above = too bright
-  STABILITY_DURATION_MS: 3000,       // How long conditions must hold before capture
-  STABILITY_THRESHOLD: 8.0,          // Max mean pixel diff for "stable" (0–255 scale)
+  STABILITY_DURATION_MS: 1500,       // How long conditions must hold before capture (1.5s)
+  STABILITY_THRESHOLD: 12.0,          // Max mean pixel diff for "stable" — relaxed for laptop webcam
   JPEG_QUALITY: 0.85,                // canvas.toBlob quality
 
   // --- Buyer Pose Detection (Track B) ---
@@ -52,6 +52,7 @@ export const AR_CONFIG = {
 
   // --- Agora ---
   AGORA_APP_ID: import.meta.env.VITE_AGORA_APP_ID || '',
+  AGORA_TEMP_TOKEN: import.meta.env.VITE_AGORA_TEMP_TOKEN || null,
 };
 
 export default AR_CONFIG;

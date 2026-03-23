@@ -101,13 +101,21 @@ function ARSessionPanelInner({ role = 'seller' }) {
   }, [client, endSession]);
 
   // Play remote video when user subscribes
+  // Use a delayed retry to handle the race condition where the ref
+  // isn't ready on the first render cycle.
   useEffect(() => {
-    if (remoteUsers.length > 0 && remoteVideoRef.current) {
-      const user = remoteUsers[0];
-      if (user.videoTrack) {
-        user.videoTrack.play(remoteVideoRef.current);
+    const playRemote = () => {
+      if (remoteUsers.length > 0 && remoteVideoRef.current) {
+        const user = remoteUsers[0];
+        if (user.videoTrack) {
+          user.videoTrack.play(remoteVideoRef.current);
+        }
       }
-    }
+    };
+    playRemote();
+    // Retry after a short delay in case the DOM isn't ready
+    const timer = setTimeout(playRemote, 300);
+    return () => clearTimeout(timer);
   }, [remoteUsers]);
 
   // Play local video
@@ -133,7 +141,7 @@ function ARSessionPanelInner({ role = 'seller' }) {
     try {
       // Generate a numeric UID
       const uid = Math.floor(Math.random() * 100000);
-      await client.join(appId, inputChannel, null, uid);
+      await client.join(appId, inputChannel, AR_CONFIG.AGORA_TEMP_TOKEN, uid);
 
       // Create and publish local camera track
       const videoTrack = await AgoraRTC.createCameraVideoTrack({
@@ -267,9 +275,16 @@ function ARSessionPanelInner({ role = 'seller' }) {
       <div className="ar-session-panel__buyer">
         <div className="ar-card" style={{ padding: 0 }}>
           <div className="ar-video-container">
-            {remoteUsers.length > 0 ? (
-              <div ref={remoteVideoRef} style={{ width: '100%', height: '100%' }} />
-            ) : (
+            {/* Always render the remote video container so the ref is stable */}
+            <div
+              ref={remoteVideoRef}
+              style={{
+                width: '100%',
+                height: '100%',
+                display: remoteUsers.length > 0 ? 'block' : 'none',
+              }}
+            />
+            {remoteUsers.length === 0 && (
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 height: '100%', color: 'var(--ar-text-muted)', fontSize: 14,
