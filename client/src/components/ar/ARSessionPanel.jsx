@@ -61,7 +61,7 @@ function ARSessionPanelInner({ role = 'seller' }) {
   }, [transitionTo]);
 
   const captureData = useFrameCapture(
-    remoteVideoRef,
+    localVideoRef,    // Seller's own camera (pointing at mannequin)
     isCapturing,
     sessionId,
     handleCaptureComplete,
