@@ -7,7 +7,7 @@
 export const AR_CONFIG = {
   // --- Frame Capture (Track A) ---
   CAPTURE_INTERVAL_MS: 500,          // How often to sample seller video (ms)
-  SHARPNESS_THRESHOLD: 12,           // Mean pixel delta — higher = sharper
+  SHARPNESS_THRESHOLD: 1,             // Mean pixel delta — lowered for laptop webcams (typical: 2–6)
   MIN_LUMINANCE: 80,                 // 0–255 scale, below = too dark
   MAX_LUMINANCE: 220,                // 0–255 scale, above = too bright
   STABILITY_DURATION_MS: 1500,       // How long conditions must hold before capture (1.5s)
