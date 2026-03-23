@@ -344,7 +344,7 @@ function ARSessionPanelInner({ role }) {
             )}
 
             {sessionState === SESSION_STATES.AR_ACTIVE && consentGiven && (
-              <BuyerARPanel />
+              <BuyerARPanel videoRef={localVideoRef} />
             )}
           </>
         )}

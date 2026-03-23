@@ -72,14 +72,43 @@ exports.segmentLive = async (req, res) => {
       });
     }
 
-    // Handle Python service unreachable
+    // Handle Python service unreachable — MOCK FALLBACK for demo
     if (error.code === 'ECONNREFUSED') {
-      return res.status(503).json({
-        success: false,
-        error: 'Segmentation service unavailable',
-        message: 'Python segmentation service is not running. Start it with: python segment_service.py',
-        retry: true,
-      });
+      console.warn('[AR] ⚠️ Flask segmentation service not running. Using uploaded frame as mock garment.');
+      try {
+        // Create session directory and save the uploaded file as a mock garment PNG
+        const sessionDir = path.join(AR_TEMP_DIR, sessionId);
+        fs.mkdirSync(sessionDir, { recursive: true });
+
+        const mockFilename = `${Date.now()}.png`;
+        const mockPath = path.join(sessionDir, mockFilename);
+
+        // Copy the uploaded JPEG as-is (it'll display fine even with .png extension)
+        fs.copyFileSync(req.file.path, mockPath);
+
+        // Clean up original upload
+        if (fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+
+        const pngUrl = `/ar-temp/${sessionId}/${mockFilename}`;
+        console.log(`[AR] [MOCK] Serving mock garment at: ${pngUrl}`);
+        return res.json({
+          success: true,
+          png_url: pngUrl,
+          session_id: sessionId,
+          processing_time_ms: Date.now() - startTime,
+          mock: true,
+        });
+      } catch (mockErr) {
+        console.error('[AR] Mock fallback failed:', mockErr);
+        return res.status(503).json({
+          success: false,
+          error: 'Segmentation service unavailable',
+          message: 'Python segmentation service is not running. Start it with: python segment_service.py',
+          retry: true,
+        });
+      }
     }
 
     return res.status(500).json({
