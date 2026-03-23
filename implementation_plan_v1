@@ -1,0 +1,133 @@
+# Webion Live AR Try-On — Implementation Plan (Revised)
+
+## Context
+
+**This is a standalone hackathon demo.** We do NOT have access to the existing Webion codebase. The goal is to build the AR try-on working on a live Agora video call as a self-contained application, ready to impress the jury.
+
+## Resolved Decisions
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Agora SDK version | **4.x** (newer SDK) |
+| 2 | Python segmentation architecture | **Flask microservice** (keeps REMBG model warm in memory) |
+| 3 | MediaPipe dual-instance perf | Not a priority for hackathon. Stop seller detection after capture. |
+| 4 | Existing codebase integration | **Out of scope** — standalone demo |
+| 5 | PNG security | **UUID-only** (no JWT on static files) |
+| 6 | Go-back to previous garment | **Out of scope** — one garment at a time |
+| 7 | Real-time session state sync | **Agora RTM** (simplest — comes with Agora SDK, no new dependency) |
+
+---
+
+## Architecture (Simplified for Hackathon)
+
+```
+┌──────────────────────────────────────────────────────┐
+│  SELLER BROWSER                                       │
+│  Agora 4.x video call + "Present Garment" controls   │
+│  Frame capture → POST JPEG to backend                 │
+└──────────────────────┬───────────────────────────────┘
+                       │ RTM messages (session state)
+┌──────────────────────▼───────────────────────────────┐
+│  BUYER BROWSER                                        │
+│  Agora 4.x video call + AR overlay                   │
+│  MediaPipe Pose + Canvas garment rendering            │
+└──────────────────────────────────────────────────────┘
+                       │ JPEG frame
+┌──────────────────────▼───────────────────────────────┐
+│  NODE.JS BACKEND (Express)                            │
+│  /api/ar/segment-live → HTTP call to Python service   │
+│  /ar-temp/* → serve PNGs (UUID-guarded)               │
+└──────────────────────┬───────────────────────────────┘
+                       │ HTTP
+┌──────────────────────▼───────────────────────────────┐
+│  PYTHON MICROSERVICE (Flask, port 5001)               │
+│  REMBG model loaded once at startup                   │
+│  POST /segment → returns segmented PNG                │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+## Developer (Agent) Assignment
+
+The 3 developers are **AI agents**. Each gets a self-contained guide document with everything they need to implement their track independently.
+
+| Agent | Track(s) | Guide Document | Branch |
+|---|---|---|---|
+| **Agent 1** | Track C + Track A (Session UI + Frame Capture) | `docs/TRACK_A_C_GUIDE.md` | `feature/track-a-c` |
+| **Agent 2** | Track B (Buyer AR Overlay Engine) | `docs/TRACK_B_GUIDE.md` | `feature/track-b` |
+| **Agent 3** | Track D (Backend + Python Segmentation) | `docs/TRACK_D_GUIDE.md` | `feature/track-d` |
+
+### What Each Guide Contains
+
+Each guide is a **complete, self-contained requirement document** that includes:
+
+1. **Exact files to create** (with paths from the shared file structure)
+2. **Exact interfaces/hooks** to implement (inputs, outputs, internal logic)
+3. **API contracts** they consume or produce
+4. **Mock data** to use before integration
+5. **Shared constants** from `arConfig.js` (defined in the scaffolded repo)
+6. **Definition of Done** — what "working" looks like for their track
+7. **What NOT to touch** — boundaries so agents don't conflict
+
+---
+
+## Implementation Sequence
+
+### Phase 0: Scaffold (Me, before sharing repo)
+
+- [x] Review PRD and create plan
+- [ ] Initialize React + Express project
+- [ ] Create the full folder structure from PRD Section 19
+- [ ] Set up `arConfig.js` with all shared constants
+- [ ] Set up `SessionContext.jsx` shell with the state enum
+- [ ] Create mock files (`test_garment.png`, `mockSegmentResponse.js`)
+- [ ] Create DB migration file
+- [ ] Write the 3 agent guide documents
+- [ ] Push to Git with initial commit
+
+### Phase 1: Parallel Development (3 Agents)
+
+All three agents work on their feature branches simultaneously:
+- **Agent 1**: Session state machine + frame capture pipeline
+- **Agent 2**: Camera, pose detection, garment overlay, screenshot
+- **Agent 3**: Express routes, Flask microservice, file serving, cleanup
+
+### Phase 2: Integration (Me, after agents PR)
+
+- Merge all feature branches into `develop`
+- Resolve any conflicts
+- Wire Track A output → Track D input → Track B rendering
+- End-to-end test on two devices
+
+### Phase 3: Demo Polish
+
+- Loading states, error messages, smooth transitions
+- Deploy to HTTPS (Vercel for frontend, Railway/Render for backend+Python)
+- 3+ dry-run rehearsals
+
+---
+
+## Verification Plan (Hackathon-Focused)
+
+No formal unit tests. Verification = **the demo works end-to-end on real devices**.
+
+### Per-Track Acceptance
+
+| Track | "It works" when... |
+|---|---|
+| A+C | Seller presses "Present Garment" → enforcement panel updates → mannequin detected → 3s countdown → frame captured and sent to backend |
+| B | Given a PNG URL, buyer's camera activates → garment overlays on body → follows movement → screenshot works |
+| D | Postman sends JPEG → Flask segments → Express returns PNG URL → PNG loads in browser → cleanup deletes files |
+
+### End-to-End Demo Validation
+
+Two devices, one Agora call. Seller shows garment → buyer sees it on their body. This must work 3 times in a row without error.
+
+---
+
+## Next Steps
+
+1. **Scaffold the project** (folder structure, configs, shared files)
+2. **Write the 3 agent guide documents** (one per track)
+3. **Push to Git** for the agents to clone and start working
