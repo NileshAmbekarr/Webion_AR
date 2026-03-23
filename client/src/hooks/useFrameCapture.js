@@ -11,23 +11,17 @@ const {
   STABILITY_DURATION_MS,
   STABILITY_THRESHOLD,
   JPEG_QUALITY,
-  MIN_KEYPOINT_VISIBILITY,
 } = AR_CONFIG;
 
 /**
- * useFrameCapture — Captures frames from the seller's Agora remote video,
- * scores quality, detects mannequin via MediaPipe Pose, and triggers capture
- * after 3 seconds of stability.
+ * useFrameCapture — Captures frames from the seller's local video,
+ * scores quality, and triggers capture after stable period.
  *
- * @param {React.RefObject} sellerVideoRef — ref to <video> element or container for seller's Agora stream
- * @param {boolean} isCapturing — true when seller has pressed "Present Garment"
- * @param {string} sessionId — current session UUID
- * @param {Function} onCaptureComplete — callback with { png_url, session_id, processing_time_ms }
- * @param {Function} onCaptureError — callback with error message
+ * SIMPLIFIED for hackathon: mannequin check auto-passes (MediaPipe is heavy),
+ * focus is on lighting + stability + sharpness.
  */
 export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptureComplete, onCaptureError) {
   const [captureStatus, setCaptureStatus] = useState('idle');
-  // 'idle' | 'scanning' | 'mannequin_detected' | 'counting_down' | 'capturing' | 'sent'
   const [countdown, setCountdown] = useState(0);
   const [qualityWarnings, setQualityWarnings] = useState([]);
   const [enforcementDetails, setEnforcementDetails] = useState({
@@ -43,8 +37,16 @@ export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptur
   const hiddenCanvasRef = useRef(null);
   const prevFrameDataRef = useRef(null);
   const stableStartRef = useRef(null);
-  const poseRef = useRef(null);
   const isProcessingRef = useRef(false);
+  // Store callbacks in refs to avoid stale closures in setInterval
+  const onCompleteRef = useRef(onCaptureComplete);
+  const onErrorRef = useRef(onCaptureError);
+  const sessionIdRef = useRef(sessionId);
+
+  // Keep refs current
+  useEffect(() => { onCompleteRef.current = onCaptureComplete; }, [onCaptureComplete]);
+  useEffect(() => { onErrorRef.current = onCaptureError; }, [onCaptureError]);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
   // Initialize hidden canvas
   useEffect(() => {
@@ -53,33 +55,23 @@ export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptur
     }
   }, []);
 
-  // Initialize MediaPipe Pose (for mannequin detection on seller frames)
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.Pose && !poseRef.current) {
-      const pose = new window.Pose({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
-      });
-      pose.setOptions({
-        modelComplexity: 1,
-        smoothLandmarks: false, // not needed for single-frame detection
-        enableSegmentation: false,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-      });
-      poseRef.current = pose;
-    }
-  }, []);
-
   /**
-   * Get the actual <video> element from a ref.
-   * Handles both direct video refs and Agora container refs.
+   * Get the actual <video> element from the Agora container.
+   * Agora 4.x injects a <video> inside the div you pass to track.play().
    */
   const getVideoElement = useCallback(() => {
-    if (!sellerVideoRef?.current) return null;
+    if (!sellerVideoRef?.current) {
+      console.warn('[FrameCapture] sellerVideoRef.current is null');
+      return null;
+    }
     const el = sellerVideoRef.current;
     if (el.tagName === 'VIDEO') return el;
-    // If it's a container (Agora 4.x plays into a div), find the video inside
-    return el.querySelector('video');
+    // Search for video inside the Agora container
+    const video = el.querySelector('video');
+    if (!video) {
+      console.warn('[FrameCapture] No <video> element found inside container. Agora may not have initialized yet.');
+    }
+    return video;
   }, [sellerVideoRef]);
 
   /**
@@ -87,7 +79,11 @@ export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptur
    */
   const captureFrameData = useCallback(() => {
     const videoEl = getVideoElement();
-    if (!videoEl || videoEl.readyState < 2) return null;
+    if (!videoEl) return null;
+    if (videoEl.readyState < 2) {
+      console.warn('[FrameCapture] Video not ready (readyState:', videoEl.readyState, ')');
+      return null;
+    }
 
     const canvas = hiddenCanvasRef.current;
     const w = videoEl.videoWidth || 640;
@@ -100,145 +96,10 @@ export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptur
       ctx.drawImage(videoEl, 0, 0, w, h);
       return ctx.getImageData(0, 0, w, h);
     } catch (e) {
-      // Canvas may be tainted (cross-origin)
-      console.warn('[FrameCapture] Canvas tainted:', e);
+      console.warn('[FrameCapture] Canvas tainted (cross-origin):', e.message);
       return null;
     }
   }, [getVideoElement]);
-
-  /**
-   * Check if mannequin keypoints are present in the current frame.
-   */
-  const checkMannequinPresence = useCallback(async (canvas) => {
-    if (!poseRef.current) return false;
-
-    return new Promise((resolve) => {
-      poseRef.current.onResults((results) => {
-        if (!results.poseLandmarks) {
-          resolve(false);
-          return;
-        }
-        const lm = results.poseLandmarks;
-        // Check shoulders (11, 12) and hips (23, 24) visibility
-        const hasShoulders =
-          lm[11]?.visibility > MIN_KEYPOINT_VISIBILITY &&
-          lm[12]?.visibility > MIN_KEYPOINT_VISIBILITY;
-        const hasHips =
-          lm[23]?.visibility > 0.4 &&
-          lm[24]?.visibility > 0.4;
-        resolve(hasShoulders && hasHips);
-      });
-      poseRef.current.send({ image: canvas });
-    });
-  }, []);
-
-  /**
-   * Main capture loop — runs every CAPTURE_INTERVAL_MS when isCapturing is true.
-   */
-  const analyzeFrame = useCallback(async () => {
-    if (isProcessingRef.current) return;
-
-    const frameData = captureFrameData();
-    if (!frameData) {
-      console.warn('[FrameCapture] No frame data — video element not ready or not playing');
-      return;
-    }
-
-    const warnings = [];
-    const details = { ...enforcementDetails };
-
-    // 1. Sharpness
-    const sharpness = calculateSharpness(frameData);
-    details.sharpness = sharpness;
-    if (sharpness < SHARPNESS_THRESHOLD) {
-      warnings.push('low_sharpness');
-    }
-
-    // 2. Luminance
-    const luminance = calculateLuminance(frameData);
-    details.luminance = luminance;
-    details.lighting = luminance >= MIN_LUMINANCE && luminance <= MAX_LUMINANCE;
-    if (!details.lighting) {
-      warnings.push(luminance < MIN_LUMINANCE ? 'too_dark' : 'too_bright');
-    }
-
-    // 3. Stability (frame delta)
-    if (prevFrameDataRef.current) {
-      const delta = calculateFrameDelta(prevFrameDataRef.current, frameData);
-      details.frameDelta = delta;
-      details.stability = delta < STABILITY_THRESHOLD;
-      if (!details.stability) {
-        warnings.push('unstable');
-      }
-    } else {
-      details.stability = false;
-      details.frameDelta = 255;
-    }
-    prevFrameDataRef.current = frameData;
-
-    // 4. Mannequin presence (async)
-    // If MediaPipe hasn't loaded from CDN, skip mannequin check (treat as passed)
-    let mannequinDetected = false;
-    if (!poseRef.current) {
-      // MediaPipe not loaded — auto-pass mannequin check for demo
-      mannequinDetected = true;
-      if (!window._mpWarningShown) {
-        console.warn('[FrameCapture] MediaPipe Pose not loaded. Mannequin check auto-passed. Ensure CDN scripts are in index.html.');
-        window._mpWarningShown = true;
-      }
-    } else {
-      try {
-        mannequinDetected = await checkMannequinPresence(hiddenCanvasRef.current);
-      } catch (e) {
-        console.warn('[FrameCapture] Mannequin detection error:', e);
-        mannequinDetected = true; // Fail-open for demo
-      }
-    }
-    details.mannequin = mannequinDetected;
-
-    setEnforcementDetails(details);
-    setQualityWarnings(warnings);
-
-    // Debug log every few frames
-    console.debug(
-      `[FrameCapture] mannequin=${mannequinDetected} lighting=${details.lighting}(${Math.round(luminance)}) ` +
-      `stability=${details.stability}(Δ${Math.round(details.frameDelta * 10) / 10}) ` +
-      `sharpness=${Math.round(sharpness)} countdown=${stableStartRef.current ? Math.round((Date.now() - stableStartRef.current) / 1000) + 's' : '-'}`
-    );
-
-    // Evaluate all conditions
-    const allRulesMet =
-      mannequinDetected &&
-      details.lighting &&
-      details.stability &&
-      sharpness >= SHARPNESS_THRESHOLD;
-
-    if (allRulesMet) {
-      if (!stableStartRef.current) {
-        stableStartRef.current = Date.now();
-        setCaptureStatus('counting_down');
-        console.log('[FrameCapture] ✅ All rules met — countdown started');
-      }
-
-      const elapsed = Date.now() - stableStartRef.current;
-      const remaining = Math.max(0, Math.ceil((STABILITY_DURATION_MS - elapsed) / 1000));
-      setCountdown(remaining);
-
-      if (elapsed >= STABILITY_DURATION_MS) {
-        console.log('[FrameCapture] 🎯 Stability hold complete — triggering capture!');
-        await triggerCapture();
-      }
-    } else {
-      // Rules broken — reset countdown
-      if (stableStartRef.current) {
-        stableStartRef.current = null;
-        setCountdown(0);
-        setCaptureStatus(mannequinDetected ? 'mannequin_detected' : 'scanning');
-      } else {
-        setCaptureStatus(mannequinDetected ? 'mannequin_detected' : 'scanning');
-      }
-    }
-  }, [captureFrameData, checkMannequinPresence, enforcementDetails]);
 
   /**
    * Trigger the actual frame capture and send to backend.
@@ -259,37 +120,29 @@ export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptur
       });
 
       setCaptureStatus('sent');
+      console.log('[FrameCapture] 📤 Sending frame to backend for segmentation...');
 
-      // Send to backend
-      const result = await segmentLiveFrame(blob, sessionId);
+      const result = await segmentLiveFrame(blob, sessionIdRef.current);
 
       if (result.success) {
-        onCaptureComplete?.(result);
+        console.log('[FrameCapture] ✅ Segmentation success:', result.png_url);
+        onCompleteRef.current?.(result);
       } else {
         throw new Error(result.message || 'Segmentation failed');
       }
     } catch (err) {
-      console.error('[FrameCapture] Capture failed:', err);
+      console.error('[FrameCapture] ❌ Capture failed:', err);
       setCaptureStatus('idle');
-      onCaptureError?.(err.message || 'Capture failed');
+      onErrorRef.current?.(err.message || 'Capture failed');
     } finally {
       isProcessingRef.current = false;
       stableStartRef.current = null;
     }
-  }, [sessionId, onCaptureComplete, onCaptureError]);
+  }, []);
 
   // Start/stop capture loop based on isCapturing
   useEffect(() => {
-    if (isCapturing) {
-      setCaptureStatus('scanning');
-      prevFrameDataRef.current = null;
-      stableStartRef.current = null;
-      setCountdown(0);
-
-      intervalRef.current = setInterval(() => {
-        analyzeFrame();
-      }, CAPTURE_INTERVAL_MS);
-    } else {
+    if (!isCapturing) {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
@@ -299,7 +152,111 @@ export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptur
       setQualityWarnings([]);
       prevFrameDataRef.current = null;
       stableStartRef.current = null;
+      return;
     }
+
+    console.log('[FrameCapture] 🟢 Capture loop STARTED (interval:', CAPTURE_INTERVAL_MS, 'ms)');
+    setCaptureStatus('scanning');
+    prevFrameDataRef.current = null;
+    stableStartRef.current = null;
+    setCountdown(0);
+
+    // ── The analysis function — defined INSIDE the effect to avoid stale closures ──
+    const analyze = async () => {
+      if (isProcessingRef.current) return;
+
+      const frameData = captureFrameData();
+      if (!frameData) return; // Warnings already logged in captureFrameData
+
+      const warnings = [];
+      const details = {
+        mannequin: true, // Auto-pass for hackathon demo
+        lighting: false,
+        stability: false,
+        sharpness: 0,
+        luminance: 0,
+        frameDelta: 255,
+      };
+
+      // 1. Sharpness
+      const sharpness = calculateSharpness(frameData);
+      details.sharpness = sharpness;
+      if (sharpness < SHARPNESS_THRESHOLD) {
+        warnings.push('low_sharpness');
+      }
+
+      // 2. Luminance
+      const luminance = calculateLuminance(frameData);
+      details.luminance = luminance;
+      details.lighting = luminance >= MIN_LUMINANCE && luminance <= MAX_LUMINANCE;
+      if (!details.lighting) {
+        warnings.push(luminance < MIN_LUMINANCE ? 'too_dark' : 'too_bright');
+      }
+
+      // 3. Stability (frame delta)
+      if (prevFrameDataRef.current) {
+        const delta = calculateFrameDelta(prevFrameDataRef.current, frameData);
+        details.frameDelta = delta;
+        details.stability = delta < STABILITY_THRESHOLD;
+        if (!details.stability) {
+          warnings.push('unstable');
+        }
+      } else {
+        // First frame — can't compare yet, auto-fail stability
+        details.stability = false;
+        details.frameDelta = 255;
+      }
+      prevFrameDataRef.current = frameData;
+
+      setEnforcementDetails(details);
+      setQualityWarnings(warnings);
+
+      // Log every frame — use console.log not console.debug so it shows in Chrome
+      console.log(
+        `[FrameCapture] mannequin=✓ lighting=${details.lighting ? '✓' : '✗'}(${Math.round(luminance)}) ` +
+        `stability=${details.stability ? '✓' : '✗'}(Δ${Math.round(details.frameDelta * 10) / 10}) ` +
+        `sharp=${Math.round(sharpness)} | ` +
+        (stableStartRef.current
+          ? `countdown: ${Math.round((Date.now() - stableStartRef.current) / 1000)}s / ${STABILITY_DURATION_MS / 1000}s`
+          : 'waiting for all checks to pass...')
+      );
+
+      // Evaluate all conditions
+      const allRulesMet =
+        details.mannequin &&
+        details.lighting &&
+        details.stability &&
+        sharpness >= SHARPNESS_THRESHOLD;
+
+      if (allRulesMet) {
+        if (!stableStartRef.current) {
+          stableStartRef.current = Date.now();
+          setCaptureStatus('counting_down');
+          console.log('[FrameCapture] ✅ ALL CHECKS PASSED — countdown started!');
+        }
+
+        const elapsed = Date.now() - stableStartRef.current;
+        const remaining = Math.max(0, Math.ceil((STABILITY_DURATION_MS - elapsed) / 1000));
+        setCountdown(remaining);
+
+        if (elapsed >= STABILITY_DURATION_MS) {
+          console.log('[FrameCapture] 🎯 Stability hold complete — CAPTURING!');
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+          await triggerCapture();
+        }
+      } else {
+        // Rules broken — reset countdown
+        if (stableStartRef.current) {
+          console.log('[FrameCapture] ⚠️ Check failed, countdown reset');
+          stableStartRef.current = null;
+          setCountdown(0);
+        }
+        setCaptureStatus('scanning');
+      }
+    };
+
+    intervalRef.current = setInterval(analyze, CAPTURE_INTERVAL_MS);
 
     return () => {
       if (intervalRef.current) {
@@ -307,7 +264,7 @@ export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptur
         intervalRef.current = null;
       }
     };
-  }, [isCapturing, analyzeFrame]);
+  }, [isCapturing, captureFrameData, triggerCapture]);
 
   // Reset function for new garment cycle
   const resetCapture = useCallback(() => {
