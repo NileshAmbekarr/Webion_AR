@@ -1,8 +1,8 @@
 # Webion Live AR — Project Progress Report
 
-**Last Updated:** 24 March 2026, 02:15 IST  
-**Branch:** `develop` (all tracks merged)  
-**Checkpoint:** Full seller→buyer flow working with mock garment
+**Last Updated:** 24 March 2026, 04:40 IST  
+**Branch:** `develop`  
+**Checkpoint:** Real AR with pose detection working
 
 ---
 
@@ -12,60 +12,64 @@
 ┌──────────────────────────┐  Agora RTC + Data  ┌──────────────────────────┐
 │      SELLER TAB          │ ◄════════════════►  │       BUYER TAB          │
 │  - Camera → mannequin    │    Live Video       │  - Sees seller video     │
-│  - Frame capture engine  │    Stream Message   │  - AR garment overlay    │
-│  - Quality checks        │    (GARMENT_READY)  │  - Pose detection        │
-│  - Garment present flow  │                     │  - Size estimation       │
+│  - Frame capture engine  │    Stream Message   │  - MediaPipe Pose (33kp) │
+│  - Quality checks        │    (GARMENT_READY)  │  - Body-anchored overlay │
+│  - Garment present flow  │                     │  - Screenshot capture    │
 └──────────┬───────────────┘                     └──────────────────────────┘
            │ POST /api/ar/segment-live
            ▼
-┌──────────────────────────┐    HTTP     ┌──────────────────────────┐
-│   Node.js Backend        │ ──────────► │  Flask Segmentation      │
-│   Express (port 3001)    │             │  REMBG (port 5001)       │
-│   - File management      │             │  - Background removal    │
-│   - Session cleanup      │             │  - Returns PNG           │
-└──────────────────────────┘             └──────────────────────────┘
+┌──────────────────────────┐  Vite Proxy  ┌──────────────────────────┐
+│   Node.js Backend        │ ──────────►  │  Flask Segmentation      │
+│   Express (port 3001)    │              │  REMBG u2net_cloth_seg   │
+│   - File management      │              │  - Garment extraction    │
+│   - Session cleanup      │              │  - Auto-trim edges       │
+└──────────────────────────┘              └──────────────────────────┘
 ```
 
-## Verified End-to-End Flow (Checkpoint 2)
+## Verified End-to-End Flow
 
 | Step | Status | Detail |
 |------|--------|--------|
-| 1. Seller joins channel | ✅ | Agora RTC + data stream created |
+| 1. Seller joins channel | ✅ | Agora RTC + data stream |
 | 2. Buyer joins channel | ✅ | Both see each other's video |
-| 3. Seller clicks "Present Garment" | ✅ | State → SELLER_PREPARING |
-| 4. Frame capture checks run | ✅ | mannequin✓ lighting✓ stability✓ sharp✓ |
-| 5. 1.5s stability hold → capture | ✅ | JPEG captured from seller's camera |
-| 6. Frame sent to backend | ✅ | POST /api/ar/segment-live (mock fallback) |
-| 7. Backend returns garment URL | ✅ | `/test_garment.png` (mock) |
-| 8. State → AR_ACTIVE | ✅ | Transitions working correctly |
-| 9. Buyer receives GARMENT_READY | ✅ | Agora data stream message |
-| 10. Buyer consent (localStorage) | ✅ | Auto-accepts after first approval |
-| 11. Buyer loads garment PNG | ✅ | Image loads, "AR Try-On Active" shown |
-| 12. Screenshot button | ✅ | Captures composite image |
-| 13. Real REMBG segmentation | ❌ | Client falls back to mock, need to wire |
-| 14. AR overlay on buyer body | ❌ | Currently shows garment image standalone |
+| 3. Seller clicks "Present Garment" | ✅ | Frame capture checks run |
+| 4. Quality checks pass (1.5s hold) | ✅ | mannequin✓ lighting✓ stability✓ sharp✓ |
+| 5. Frame sent to backend | ✅ | Vite proxy → localhost:3001 |
+| 6. Backend forwards to Flask | ✅ | REMBG u2net_cloth_seg model |
+| 7. Segmented PNG returned | ✅ | Auto-trimmed, no crop |
+| 8. Buyer receives garment URL | ✅ | Via Agora data stream |
+| 9. MediaPipe Pose detects body | ✅ | 33 keypoints at ~36 FPS |
+| 10. Garment anchored to body | ✅ | Centered on shoulders, scales with body |
+| 11. Keypoint debug overlay | ✅ | Green=shoulders/hips, orange=arms |
+| 12. Screenshot button | ✅ | Composites video + overlay |
 
-## Bugs Fixed (Cumulative — 13 total)
+## Bugs Fixed (17 total)
 
 | # | Issue | Fix |
 |---|-------|-----|
-| 1–10 | (see previous checkpoint) | Various state machine, capture, sync fixes |
-| 11 | Garment 404 (`localhost:3001/test_garment.png`) | Fixed URL construction — mock paths served by Vite, not backend |
-| 12 | MediaPipe Pose WASM crash | Made Pose a singleton + rAF loop (no Camera helper) |
-| 13 | BuyerARPanel empty | Removed CSS dependency, inline styles, visible state indicators |
+| 1–13 | (see checkpoint 2) | State machine, capture, sync, BuyerARPanel |
+| 14 | `ERR_CONNECTION_REFUSED` on seller | Added Vite proxy, relative API URLs |
+| 15 | Garment shifted left | Removed canvas `scaleX(-1)`, centered on midShoulder |
+| 16 | `img_cropped` reference error | Fixed stale variable after refactor |
+| 17 | Duplicate MediaPipe CDN scripts | Removed duplicates from `<head>` |
 
-## Flask Microservice Status
+## MediaPipe Pose Keypoints Used
 
-- **Running:** ✅ `/health` → `{"status":"ok"}`
-- **REMBG model:** Loaded (`isnet-general-use`)
-- **Port:** 5001
-- **Pipeline:** Node `form-data` + `axios` installed and wired
-- **Not yet tested:** Real frame → REMBG → segmented PNG end-to-end
+- **Green (key):** shoulders (11, 12), hips (23, 24) — garment anchoring
+- **Orange (arms):** elbows (13, 14), wrists (15, 16) — skeleton viz
+- **White (other):** nose, ears, knees, etc. — context
+- **Red:** center crosshair at midShoulder — garment placement origin
+
+## Known Limitations
+
+1. **Garment is a flat 2D image** — doesn't warp/deform to body shape
+2. **Arms go behind garment** — no depth/occlusion handling
+3. **Mannequin parts in segmentation** — REMBG extracts foreground (mannequin + garment), not garment-only
 
 ## Running the Project
 
 ```bash
-# Terminal 1 — Python segmentation (port 5001)
+# Terminal 1 — Flask segmentation (port 5001)
 cd server/scripts && python segment_service.py
 
 # Terminal 2 — Node backend (port 3001)
@@ -74,6 +78,6 @@ cd server && node app.js
 # Terminal 3 — React frontend (port 5173)
 cd client && npm run dev -- --host
 
-# Terminal 4 — Cloudflare tunnel (for mobile testing)
+# Terminal 4 — Cloudflare tunnel
 cloudflared tunnel --url http://localhost:5173
 ```

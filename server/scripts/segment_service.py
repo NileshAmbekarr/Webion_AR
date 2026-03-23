@@ -32,10 +32,6 @@ except Exception as e:
 
 AR_TEMP_DIR = os.environ.get('AR_TEMP_DIR', os.path.join(tempfile.gettempdir(), 'ar_sessions'))
 
-# Crop ratios — remove head and legs from the segmented image
-CROP_TOP_RATIO = 0.01    # Remove top 18% (head/neck)
-CROP_BOTTOM_RATIO = 0.30  # Remove bottom 25% (legs/feet)
-
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -85,18 +81,6 @@ def segment():
             img = img.crop(bbox)
             w, h = img.size
             print(f"[Webion AR] After auto-trim: {w}x{h}")
-        else:
-            print("[Webion AR] ⚠️ Image is fully transparent after segmentation — saving as-is")
-
-        # Optional: crop to torso region (remove head & legs)
-        if CROP_TOP_RATIO > 0 or CROP_BOTTOM_RATIO > 0:
-            crop_top = int(h * CROP_TOP_RATIO)
-            crop_bottom = int(h * (1 - CROP_BOTTOM_RATIO))
-            if crop_bottom > crop_top + 20:  # At least 20px tall after crop
-                img = img.crop((0, crop_top, w, crop_bottom))
-                print(f"[Webion AR] After torso crop: {img.size[0]}x{img.size[1]}")
-            else:
-                print(f"[Webion AR] ⚠️ Skipping crop — would result in too-small image")
 
         print(f"[Webion AR] Final garment size: {img.size[0]}x{img.size[1]}")
 
