@@ -5,11 +5,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: true, // Allows external access
-    port: 5173, // You can change this if needed
-
-    allowedHosts: [
-      "commitments-traditions-reuters-vegetable.trycloudflare.com"
-    ]
-  },
-})
+    host: "0.0.0.0",
+    strictPort: true,
+    allowedHosts: true
+  }
+});

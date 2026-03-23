@@ -42,9 +42,14 @@ function ARSessionPanelInner({ role }) {
   ].includes(sessionState);
 
   const handleCaptureComplete = useCallback((result) => {
-    const fullUrl = result.png_url.startsWith('http')
-      ? result.png_url
-      : `${AR_CONFIG.API_BASE_URL}${result.png_url}`;
+    // Build full URL: backend paths (/ar-temp/) need the API base, others are served by Vite
+    let fullUrl = result.png_url;
+    if (!fullUrl.startsWith('http')) {
+      if (fullUrl.startsWith('/ar-temp/')) {
+        fullUrl = `${AR_CONFIG.API_BASE_URL}${fullUrl}`;
+      }
+      // else: paths like /test_garment.png are in client/public, served by Vite — keep as-is
+    }
     setCapturedGarmentUrl(fullUrl);
     transitionTo(SESSION_STATES.AR_ACTIVE, { garmentUrl: fullUrl });
 
