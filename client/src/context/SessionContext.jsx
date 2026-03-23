@@ -38,6 +38,9 @@ export function SessionProvider({ children }) {
       // ANY state can go to IDLE (call ended)
       if (newState === SESSION_STATES.IDLE) return newState;
 
+      // Self-transition is a no-op (no warning)
+      if (newState === prevState) return prevState;
+
       const allowed = VALID_TRANSITIONS[prevState];
       if (allowed && allowed.includes(newState)) {
         return newState;
