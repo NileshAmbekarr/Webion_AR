@@ -97,8 +97,8 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
       const scaledWidth = shoulderWidth_px * GARMENT_SHOULDER_PADDING;
       const scaledHeight = garment.naturalHeight * (scaledWidth / garment.naturalWidth);
 
-      // 7. Position
-      const xPos = LS.x - scaledWidth * GARMENT_X_OVERHANG;
+      // 7. Position — CENTER the garment on the torso
+      const xPos = midShoulder.x - scaledWidth / 2;
       const yPos = midShoulder.y - scaledHeight * GARMENT_Y_NECKLINE;
 
       // 8. Draw — subtly fade in on first frame

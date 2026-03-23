@@ -33,8 +33,8 @@ except Exception as e:
 AR_TEMP_DIR = os.environ.get('AR_TEMP_DIR', os.path.join(tempfile.gettempdir(), 'ar_sessions'))
 
 # Crop ratios — remove head and legs from the segmented image
-CROP_TOP_RATIO = 0.18    # Remove top 18% (head/neck)
-CROP_BOTTOM_RATIO = 0.25  # Remove bottom 25% (legs/feet)
+CROP_TOP_RATIO = 0.01    # Remove top 18% (head/neck)
+CROP_BOTTOM_RATIO = 0.30  # Remove bottom 25% (legs/feet)
 
 
 @app.route('/health', methods=['GET'])

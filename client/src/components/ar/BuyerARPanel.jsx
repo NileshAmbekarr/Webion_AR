@@ -85,7 +85,6 @@ export default function BuyerARPanel({ videoRef }) {
           width: '100%', height: '100%',
           pointerEvents: 'none',
           zIndex: 15,
-          transform: 'scaleX(-1)', // Mirror to match selfie view
         }}
       />
 
