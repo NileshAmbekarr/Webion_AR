@@ -64,15 +64,23 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
         return;
       }
 
-      // Keep canvas in sync with video dimensions
+      // ── Wait for video to be ready (videoWidth/Height available)
+      // NEVER fall back to canvas.offsetWidth — that's a fixed CSS size that
+      // doesn't change as the buyer moves, making the garment appear stuck.
+      if (!video.videoWidth || !video.videoHeight || video.readyState < 2) {
+        rafRef.current = requestAnimationFrame(renderFrame);
+        return;
+      }
+
+      // Sync canvas resolution to actual video frame (not CSS display size)
       if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-        canvas.width = video.videoWidth || canvas.offsetWidth;
-        canvas.height = video.videoHeight || canvas.offsetHeight;
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
       }
 
       const ctx = canvas.getContext('2d');
-      const W = canvas.width;
-      const H = canvas.height;
+      const W = canvas.width;   // actual video frame width  (e.g. 640)
+      const H = canvas.height;  // actual video frame height (e.g. 480)
 
       // 1. Clear
       ctx.clearRect(0, 0, W, H);
