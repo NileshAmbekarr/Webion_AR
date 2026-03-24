@@ -23,6 +23,13 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
   const rafRef = useRef(null);
   const activeRef = useRef(true);
 
+  // ── Store latest keypoints in a ref so the render loop always reads live
+  //    data WITHOUT re-mounting on every keypoint update (~30fps teardown fix)
+  const keypointsRef = useRef(keypoints);
+  useEffect(() => {
+    keypointsRef.current = keypoints;
+  }, [keypoints]);
+
   // --- Load garment image whenever garmentUrl changes ---
   useEffect(() => {
     if (!garmentUrl) {
@@ -42,7 +49,7 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
     img.src = garmentUrl;
   }, [garmentUrl]);
 
-  // --- Render loop ---
+  // --- Render loop — runs once, reads live data from refs each tick ---
   useEffect(() => {
     activeRef.current = true;
 
@@ -70,8 +77,8 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
       // 1. Clear
       ctx.clearRect(0, 0, W, H);
 
-      // 2. Skip if no keypoints or canvas not ready
-      const kp = keypoints;
+      // 2. Read LIVE keypoints from ref (not stale closure capture)
+      const kp = keypointsRef.current;
       const garment = garmentImageRef.current;
       if (!kp || W === 0 || H === 0) {
         rafRef.current = requestAnimationFrame(renderFrame);
@@ -80,26 +87,19 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
 
       // ─────────────────────────────────────────────────────────────
       // 3. BODY MEASUREMENT — compute buyer's body box in pixels
-      //
       //    X is flipped (1 - kp.x) to undo Agora's mirrored video.
-      //    This gives real left/right positions on screen.
       // ─────────────────────────────────────────────────────────────
       const LS = { x: (1 - kp[11].x) * W, y: kp[11].y * H }; // left  shoulder
       const RS = { x: (1 - kp[12].x) * W, y: kp[12].y * H }; // right shoulder
       const LH = { x: (1 - kp[23].x) * W, y: kp[23].y * H }; // left  hip
       const RH = { x: (1 - kp[24].x) * W, y: kp[24].y * H }; // right hip
 
-      // Shoulder width in pixels (actual measured body width)
       const shoulderWidth_px = Math.hypot(LS.x - RS.x, LS.y - RS.y);
-
-      // Torso centre points
       const midShoulder = { x: (LS.x + RS.x) / 2, y: (LS.y + RS.y) / 2 };
       const midHip      = { x: (LH.x + RH.x) / 2, y: (LH.y + RH.y) / 2 };
-
-      // Torso height in pixels — shoulder midpoint → hip midpoint
       const torsoHeight_px = Math.abs(midHip.y - midShoulder.y);
 
-      // Guard: skip if measurements are degenerate (buyer too far/partial)
+      // Guard: skip if measurements are degenerate
       if (shoulderWidth_px < 10 || torsoHeight_px < 10) {
         rafRef.current = requestAnimationFrame(renderFrame);
         return;
@@ -107,14 +107,8 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
 
       // ─────────────────────────────────────────────────────────────
       // 4. MEASUREMENT-BASED GARMENT SIZING
-      //
-      //    Width  = shoulder_px × GARMENT_SHOULDER_SCALE
-      //    Height = torso_px    × GARMENT_TORSO_SCALE
-      //
-      //    These are INDEPENDENT — the garment image is stretched both
-      //    horizontally and vertically to match the buyer's body box.
-      //    A tall buyer gets a taller garment; a wide buyer gets a wider
-      //    garment — regardless of the garment's original aspect ratio.
+      //    Width  = shoulder_px × scale  (independent of height)
+      //    Height = torso_px    × scale  (independent of width)
       // ─────────────────────────────────────────────────────────────
       const {
         GARMENT_SHOULDER_SCALE,
@@ -128,17 +122,12 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
 
       // ─────────────────────────────────────────────────────────────
       // 5. ANCHOR POSITION
-      //
-      //    MediaPipe reports the *joint centre*, not the top of shoulder.
-      //    Shift anchor UP by SHOULDER_Y_OFFSET so the overlay starts at
-      //    approximately the actual shoulder-top / collar line.
-      //    Then shift top of garment UP by GARMENT_NECK_OFFSET for collar.
       // ─────────────────────────────────────────────────────────────
       const anchorY = midShoulder.y - torsoHeight_px * SHOULDER_Y_OFFSET;
       const xPos    = midShoulder.x - drawWidth / 2;
       const yPos    = anchorY - torsoHeight_px * GARMENT_NECK_OFFSET;
 
-      // 6. Draw garment: stretched independently in both axes to match body box
+      // 6. Draw garment stretched to body box
       if (garment) {
         ctx.globalAlpha = 0.92;
         ctx.drawImage(garment, xPos, yPos, drawWidth, drawHeight);
@@ -156,14 +145,15 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-      // Clear canvas on unmount
       const canvas = canvasRef.current;
       if (canvas) {
         const ctx = canvas.getContext('2d');
         ctx?.clearRect(0, 0, canvas.width, canvas.height);
       }
     };
-  }, [canvasRef, videoRef, keypoints]);
+  // ← keypoints intentionally NOT in deps — read via keypointsRef instead
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasRef, videoRef]);
 
   // --- Screenshot function ---
   const screenshotFn = useCallback(() => {
