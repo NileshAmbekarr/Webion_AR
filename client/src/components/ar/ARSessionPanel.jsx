@@ -299,6 +299,11 @@ function ARSessionPanelInner({ role }) {
               {role === 'seller' ? '📹 You (Seller)' : '📹 You (Buyer)'}
             </span>
 
+            {/* Seller: show mannequin body landmarks */}
+            {role === 'seller' && (
+              <PoseLandmarkOverlay videoRef={localVideoRef} />
+            )}
+
             {/* Buyer: always-on body landmark overlay */}
             {role === 'buyer' && (
               <PoseLandmarkOverlay videoRef={localVideoRef} />
