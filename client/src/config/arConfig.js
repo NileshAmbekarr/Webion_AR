@@ -20,9 +20,10 @@ export const AR_CONFIG = {
   MEDIAPIPE_MIN_TRACKING_CONF: 0.5,
   EMA_ALPHA: 0.6,                    // Smoothing factor for keypoints (0–1)
   MIN_KEYPOINT_VISIBILITY: 0.5,      // Minimum visibility for shoulder/hip keypoints
-  GARMENT_SHOULDER_PADDING: 1.6,    // 60% padding beyond shoulders for larger overlay
+  GARMENT_SHOULDER_PADDING: 1.5,    // 50% padding beyond shoulders for overlay sizing
   GARMENT_X_OVERHANG: 0.075,         // Slight left overhang ratio
-  GARMENT_Y_NECKLINE: 0.18,          // Neckline offset — 18% above shoulder midpoint
+  GARMENT_Y_NECKLINE: 0.12,          // Neckline offset — 12% above shoulder midpoint (sits on shoulders)
+  GARMENT_MAX_HEIGHT_RATIO: 1.2,     // Max garment height as ratio of shoulder-to-hip distance
 
   // --- Buyer Distance Rules (Track B/C) ---
   BUYER_TOO_CLOSE_THRESHOLD: 0.45,   // Shoulder width > 45% of frame = too close

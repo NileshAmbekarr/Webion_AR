@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSessionState } from '../../context/SessionContext';
-import { usePoseDetection } from '../../hooks/usePoseDetection';
 import { useGarmentOverlay } from '../../hooks/useGarmentOverlay';
 
 /**
@@ -8,36 +7,17 @@ import { useGarmentOverlay } from '../../hooks/useGarmentOverlay';
  * Renders INSIDE the ar-video-container as an absolute overlay.
  * Garment is anchored to the buyer's shoulders/hips via pose detection.
  * Falls back to centered overlay if pose detection fails.
+ *
+ * Receives keypoints/fps/isModelLoaded/videoElRef from parent
+ * to avoid creating a duplicate MediaPipe Pose instance.
  */
-export default function BuyerARPanel({ videoRef }) {
+export default function BuyerARPanel({ videoRef, videoElRef, keypoints, isModelLoaded, fps }) {
   const { capturedGarmentUrl } = useSessionState();
   const canvasRef = useRef(null);
   const [useFallback, setUseFallback] = useState(false);
   const [garmentScale, setGarmentScale] = useState(80); // percentage of container width
   const [garmentLoaded, setGarmentLoaded] = useState(false);
   const [garmentError, setGarmentError] = useState(false);
-
-  // --- Get the actual <video> element from the Agora container ---
-  const videoElRef = useRef(null);
-  useEffect(() => {
-    const container = videoRef?.current;
-    if (!container) return;
-
-    // Poll briefly for the Agora-injected <video> element
-    const findVideo = () => {
-      const vid = container.querySelector('video');
-      if (vid) {
-        videoElRef.current = vid;
-        console.log('[BuyerARPanel] Found Agora <video> element:', vid.videoWidth, 'x', vid.videoHeight);
-      }
-    };
-    findVideo();
-    const timer = setInterval(findVideo, 500);
-    return () => clearInterval(timer);
-  }, [videoRef]);
-
-  // --- MediaPipe Pose Detection (real AR) ---
-  const { keypoints, isModelLoaded, fps } = usePoseDetection(videoElRef, !useFallback);
 
   // If pose doesn't load within 10s, switch to fallback
   useEffect(() => {
@@ -59,8 +39,6 @@ export default function BuyerARPanel({ videoRef }) {
     setGarmentLoaded(false);
     setGarmentError(false);
   }, [capturedGarmentUrl]);
-
-  console.log('[BuyerARPanel] garmentUrl:', capturedGarmentUrl, '| poseLoaded:', isModelLoaded, '| fallback:', useFallback, '| fps:', fps);
 
   if (!capturedGarmentUrl) {
     return (

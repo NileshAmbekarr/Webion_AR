@@ -5,6 +5,7 @@ const {
   GARMENT_SHOULDER_PADDING,
   GARMENT_X_OVERHANG,
   GARMENT_Y_NECKLINE,
+  GARMENT_MAX_HEIGHT_RATIO,
 } = AR_CONFIG;
 
 /**
@@ -88,14 +89,26 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
       // 4. Shoulder width in px
       const shoulderWidth_px = Math.hypot(LS.x - RS.x, LS.y - RS.y);
 
-      // 5. Torso center
+      // 5. Torso center + hip center
       const midShoulder = { x: (LS.x + RS.x) / 2, y: (LS.y + RS.y) / 2 };
+      const midHip = { x: (LH.x + RH.x) / 2, y: (LH.y + RH.y) / 2 };
+
+      // 6. Shoulder-to-hip distance (torso height)
+      const torsoHeight = Math.abs(midHip.y - midShoulder.y);
 
       // ── Draw garment (only if loaded) ──
       if (garment) {
         const scaledWidth = shoulderWidth_px * GARMENT_SHOULDER_PADDING;
-        const scaledHeight = garment.naturalHeight * (scaledWidth / garment.naturalWidth);
-        const xPos = midShoulder.x - scaledWidth / 2;
+        let scaledHeight = garment.naturalHeight * (scaledWidth / garment.naturalWidth);
+
+        // Clamp garment height to not extend too far below the hips
+        const maxHeight = torsoHeight * GARMENT_MAX_HEIGHT_RATIO;
+        if (scaledHeight > maxHeight && maxHeight > 0) {
+          scaledHeight = maxHeight;
+        }
+
+        // Apply slight horizontal overhang for natural draping
+        const xPos = midShoulder.x - scaledWidth / 2 - (shoulderWidth_px * GARMENT_X_OVERHANG);
         const yPos = midShoulder.y - scaledHeight * GARMENT_Y_NECKLINE;
 
         ctx.globalAlpha = 0.92;

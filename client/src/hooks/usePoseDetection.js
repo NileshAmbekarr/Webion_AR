@@ -137,17 +137,30 @@ export function usePoseDetection(videoRef, enabled = true) {
         setIsModelLoaded(true);
 
         // Start a manual send loop using rAF (don't use Camera — it conflicts with Agora)
+        // Throttled to ~30fps with busy-guard to prevent WASM backpressure & freezing
         const videoEl = videoRef.current;
         if (!videoEl) return;
 
+        let busy = false;
+        let lastSendTime = 0;
+        const MIN_INTERVAL_MS = 33; // ~30fps max
+
         async function sendFrame() {
           if (!activeRef.current) return;
+
+          const now = performance.now();
           const v = videoRef.current;
-          if (v && v.readyState >= 2 && globalPoseInstance) {
+
+          // Skip if busy (previous frame still processing) or too soon since last send
+          if (!busy && v && v.readyState >= 2 && globalPoseInstance && (now - lastSendTime) >= MIN_INTERVAL_MS) {
+            busy = true;
+            lastSendTime = now;
             try {
               await globalPoseInstance.send({ image: v });
             } catch (e) {
               // Ignore individual frame send errors
+            } finally {
+              busy = false;
             }
           }
           rafRef.current = requestAnimationFrame(sendFrame);

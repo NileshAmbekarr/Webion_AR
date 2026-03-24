@@ -4,8 +4,15 @@ import { usePoseDetection } from '../../hooks/usePoseDetection';
 /**
  * PoseLandmarkOverlay — Renders MediaPipe Pose body landmarks
  * on the buyer's video feed. Shows immediately on join, no AR state needed.
+ *
+ * Owns the single usePoseDetection instance and reports keypoints
+ * up to the parent via onPoseUpdate callback.
  */
-export default function PoseLandmarkOverlay({ videoRef }) {
+export default function PoseLandmarkOverlay({
+  videoRef,
+  onPoseUpdate,
+  onVideoElFound,
+}) {
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
 
@@ -19,15 +26,24 @@ export default function PoseLandmarkOverlay({ videoRef }) {
       if (vid && !videoElRef.current) {
         videoElRef.current = vid;
         console.log('[PoseLandmarks] Found <video>:', vid.videoWidth, 'x', vid.videoHeight);
+        // Report video element to parent for garment overlay
+        if (onVideoElFound) onVideoElFound(vid);
       }
     };
     findVideo();
     const timer = setInterval(findVideo, 500);
     return () => clearInterval(timer);
-  }, [videoRef]);
+  }, [videoRef, onVideoElFound]);
 
-  // MediaPipe Pose
+  // MediaPipe Pose — sole instance
   const { keypoints, isModelLoaded, fps } = usePoseDetection(videoElRef, true);
+
+  // Report keypoints to parent whenever they change
+  useEffect(() => {
+    if (onPoseUpdate) {
+      onPoseUpdate({ keypoints, isModelLoaded, fps });
+    }
+  }, [keypoints, isModelLoaded, fps, onPoseUpdate]);
 
   // Keypoint labels for key joints
   const keyLabels = useRef({

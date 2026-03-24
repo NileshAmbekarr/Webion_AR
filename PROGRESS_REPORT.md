@@ -1,8 +1,8 @@
 # Webion Live AR — Project Progress Report
 
-**Last Updated:** 24 March 2026, 05:43 IST  
+**Last Updated:** 24 March 2026, 09:36 IST  
 **Branch:** `develop`  
-**Checkpoint:** Body landmark visualization with x-coordinate mirror fix
+**Checkpoint:** Skeleton freeze fix + garment overlay positioning polish
 
 ---
 
@@ -41,15 +41,16 @@
 | 7. Backend forwards to Flask | ✅ | REMBG u2net_cloth_seg model |
 | 8. Segmented PNG returned | ✅ | Auto-trimmed, served via /ar-temp/ |
 | 9. Buyer receives garment URL | ✅ | Via Agora data stream message |
-| 10. MediaPipe Pose detects body | ✅ | 33 keypoints at ~40 FPS |
-| 11. Garment anchored to body | ✅ | Centered between shoulders, scales with body |
+| 10. MediaPipe Pose detects body | ✅ | 33 keypoints at ~30 FPS (throttled) |
+| 11. Garment anchored to body | ✅ | Hip-clamped height, shoulder-centered, overhang offset |
 | 12. Screenshot button | ✅ | Composites video + overlay |
 
 ## Key Components
 
-### PoseLandmarkOverlay (NEW)
+### PoseLandmarkOverlay
 - Standalone component inside buyer's video container
 - Renders **immediately on join** — no AR state required
+- Accepts optional `externalKeypoints` props to share pose data with BuyerARPanel
 - Full body skeleton: torso (green), arms (orange), legs (cyan)
 - Labeled key joints: shoulders, hips, elbows, wrists, nose, ears, knees, ankles
 - Center crosshair (red) at midpoint between shoulders
@@ -58,8 +59,9 @@
 
 ### BuyerARPanel
 - Renders only during AR_ACTIVE state (after garment received)
-- Uses `usePoseDetection` + `useGarmentOverlay` for body-anchored garment
-- Garment centered on torso using `midShoulder.x - scaledWidth/2`
+- Receives shared `keypoints`, `isModelLoaded`, `fps`, `videoElRef` from parent (single pose detection instance)
+- Uses `useGarmentOverlay` for body-anchored garment
+- Garment centered on torso with hip-clamped height, overhang offset
 - Fallback mode: positioned `<img>` if pose detection fails within 10s
 - Screenshot + size slider (fallback mode)
 
@@ -68,7 +70,7 @@
 - Auto-trims transparent edges using `PIL.getbbox()`
 - No torso crop (removed — was causing garment to disappear)
 
-## Bugs Fixed (19 total)
+## Bugs Fixed (21 total)
 
 | # | Issue | Fix |
 |---|-------|-----|
@@ -79,6 +81,8 @@
 | 17 | Duplicate MediaPipe CDN scripts | Removed duplicates from `<head>` |
 | 18 | Torso crop destroying garment | Removed crop entirely |
 | 19 | Landmark/garment position mismatch | Flipped x-coordinates: `(1-x)*W` to match Agora mirror |
+| 20 | **Skeleton freezing randomly** | Dual `usePoseDetection` instances racing on singleton WASM — lifted to parent, added frame throttling + busy-guard |
+| 21 | **Garment positioning/sizing off** | Tuned config (padding 1.6→1.5, neckline 0.18→0.12), added hip-clamped height, applied GARMENT_X_OVERHANG |
 
 ## MediaPipe Pose Keypoints
 

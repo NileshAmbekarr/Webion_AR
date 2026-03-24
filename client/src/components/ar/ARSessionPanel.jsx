@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useSessionState, SESSION_STATES, SessionProvider } from '../../context/SessionContext';
 import { AR_CONFIG } from '../../config/arConfig';
 import { useFrameCapture } from '../../hooks/useFrameCapture';
+
 import SellerCapturePanel from './SellerCapturePanel';
 import ConsentModal from './ConsentModal';
 import SessionStatusBanner from './SessionStatusBanner';
@@ -82,6 +83,19 @@ function ARSessionPanelInner({ role }) {
     handleCaptureComplete,
     handleCaptureError
   );
+
+  // ---- Buyer: Pose data received from PoseLandmarkOverlay (sole owner of usePoseDetection) ----
+  const [buyerPoseData, setBuyerPoseData] = useState({ keypoints: null, isModelLoaded: false, fps: 0 });
+  const buyerVideoElRef = useRef(null);
+
+  const handlePoseUpdate = useCallback((data) => {
+    setBuyerPoseData(data);
+  }, []);
+
+  const handleVideoElFound = useCallback((videoEl) => {
+    buyerVideoElRef.current = videoEl;
+    console.log('[ARSession] Received buyer <video> from PoseLandmarkOverlay:', videoEl.videoWidth, 'x', videoEl.videoHeight);
+  }, []);
 
   // ---- Agora Event Handlers ----
   useEffect(() => {
@@ -299,14 +313,24 @@ function ARSessionPanelInner({ role }) {
               {role === 'seller' ? '📹 You (Seller)' : '📹 You (Buyer)'}
             </span>
 
-            {/* Buyer: always-on body landmark overlay */}
+            {/* Buyer: always-on body landmark overlay (sole owner of pose detection) */}
             {role === 'buyer' && (
-              <PoseLandmarkOverlay videoRef={localVideoRef} />
+              <PoseLandmarkOverlay
+                videoRef={localVideoRef}
+                onPoseUpdate={handlePoseUpdate}
+                onVideoElFound={handleVideoElFound}
+              />
             )}
 
             {/* Buyer: garment overlay sits INSIDE the video container */}
             {role === 'buyer' && sessionState === SESSION_STATES.AR_ACTIVE && consentGiven && (
-              <BuyerARPanel videoRef={localVideoRef} />
+              <BuyerARPanel
+                videoRef={localVideoRef}
+                videoElRef={buyerVideoElRef}
+                keypoints={buyerPoseData.keypoints}
+                isModelLoaded={buyerPoseData.isModelLoaded}
+                fps={buyerPoseData.fps}
+              />
             )}
           </div>
         </div>

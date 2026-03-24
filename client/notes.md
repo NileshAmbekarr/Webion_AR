@@ -155,3 +155,7 @@ BuyerARPanel.jsx:14 [BuyerARPanel] capturedGarmentUrl: /test_garment.png
 installHook.js:1 [BuyerARPanel] capturedGarmentUrl: /test_garment.png
 BuyerARPanel.jsx:14 [BuyerARPanel] capturedGarmentUrl: /test_garment.png
 installHook.js:1 [BuyerARPanel] capturedGarmentUrl: /test_garment.png
+
+
+ 
+asses the current state of the system, try polishing the positioning of the png image on the overlay of the buyer. and also the size fit and things. also the mediapipe skeleton which we are drwaing to see the points of the body of the buyer are freezing suddenly. inspect this. 
