@@ -26,7 +26,7 @@ export const AR_CONFIG = {
   // box (shoulder width × torso height) from pose keypoints and independently
   // stretch the garment image to match their exact proportions.
   GARMENT_SHOULDER_SCALE: 1.15,      // garment draw-width  = shoulderWidth_px × scale (adds sleeve room)
-  GARMENT_TORSO_SCALE: 1.10,         // garment draw-height = torsoHeight_px  × scale (adds hem drape)
+  GARMENT_TORSO_SCALE: 1.8,         // garment draw-height = torsoHeight_px  × scale (adds hem drape)
   GARMENT_NECK_OFFSET: 0.10,         // shift garment top UP by 10% of torso height (collar placement)
   SHOULDER_Y_OFFSET: 0.08,           // shift shoulder anchor UP by 8% of torso (MediaPipe joint-center correction)
 
