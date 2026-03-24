@@ -20,11 +20,15 @@ export const AR_CONFIG = {
   MEDIAPIPE_MIN_TRACKING_CONF: 0.5,
   EMA_ALPHA: 0.6,                    // Smoothing factor for keypoints (0–1)
   MIN_KEYPOINT_VISIBILITY: 0.5,      // Minimum visibility for shoulder/hip keypoints
-  GARMENT_SHOULDER_PADDING: 1.6,    // 80% padding beyond shoulders for overlay sizing
-  GARMENT_X_OVERHANG: 0.075,         // Slight left overhang ratio
-  GARMENT_Y_NECKLINE: 0.12,          // Neckline offset — 12% above shoulder midpoint (sits on shoulders)
-  GARMENT_MAX_HEIGHT_RATIO: 1.2,     // Max garment height as ratio of shoulder-to-hip distance
-  SHOULDER_Y_OFFSET: 0.15,            // Shift shoulder anchor UP by 15% of torso height (MediaPipe detects joint center, not top of shoulder)
+
+  // --- Measurement-Based Garment Fitting (Track B) ---
+  // Instead of blindly scaling with a fixed ratio, we compute the buyer's body
+  // box (shoulder width × torso height) from pose keypoints and independently
+  // stretch the garment image to match their exact proportions.
+  GARMENT_SHOULDER_SCALE: 1.15,      // garment draw-width  = shoulderWidth_px × scale (adds sleeve room)
+  GARMENT_TORSO_SCALE: 1.10,         // garment draw-height = torsoHeight_px  × scale (adds hem drape)
+  GARMENT_NECK_OFFSET: 0.10,         // shift garment top UP by 10% of torso height (collar placement)
+  SHOULDER_Y_OFFSET: 0.08,           // shift shoulder anchor UP by 8% of torso (MediaPipe joint-center correction)
 
   // --- Buyer Distance Rules (Track B/C) ---
   BUYER_TOO_CLOSE_THRESHOLD: 0.45,   // Shoulder width > 45% of frame = too close

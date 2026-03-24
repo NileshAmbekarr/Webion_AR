@@ -1,25 +1,22 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { AR_CONFIG } from '../config/arConfig';
 
-const {
-  GARMENT_SHOULDER_PADDING,
-  GARMENT_X_OVERHANG,
-  GARMENT_Y_NECKLINE,
-  GARMENT_MAX_HEIGHT_RATIO,
-  SHOULDER_Y_OFFSET,
-} = AR_CONFIG;
-
 /**
- * useGarmentOverlay — Track B
- * Renders the segmented garment PNG on the canvas, anchored to buyer's shoulders.
+ * useGarmentOverlay — Track B (Measurement-Based Fitting)
+ *
+ * Renders the segmented garment PNG on the canvas, stretched to match the
+ * buyer's actual body measurements derived from MediaPipe pose keypoints:
+ *
+ *   draw-width  = shoulder_px  × GARMENT_SHOULDER_SCALE  (covers shoulder + sleeve room)
+ *   draw-height = torso_px     × GARMENT_TORSO_SCALE     (covers shoulder-to-hip + hem drape)
+ *
+ * Width and height are INDEPENDENT — the garment morphs to the buyer's
+ * body proportions instead of being locked to its original aspect ratio.
  *
  * @param {React.RefObject} canvasRef  — ref to overlay <canvas> element
  * @param {React.RefObject} videoRef   — ref to buyer <video> element
  * @param {Array|null}      keypoints  — smoothed MediaPipe NormalizedLandmarkList
  * @param {string|null}     garmentUrl — URL of segmented garment PNG
- *
- * Returns:
- *   screenshotFn — async function that captures composite (video + overlay) as JPEG
  */
 export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
   const garmentImageRef = useRef(null);
@@ -73,7 +70,7 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
       // 1. Clear
       ctx.clearRect(0, 0, W, H);
 
-      // 2. Skip if no keypoints
+      // 2. Skip if no keypoints or canvas not ready
       const kp = keypoints;
       const garment = garmentImageRef.current;
       if (!kp || W === 0 || H === 0) {
@@ -81,42 +78,70 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
         return;
       }
 
-      // 3. Extract key pixel coordinates (flip X to match Agora's mirrored video)
-      const LS = { x: (1 - kp[11].x) * W, y: kp[11].y * H };
-      const RS = { x: (1 - kp[12].x) * W, y: kp[12].y * H };
-      const LH = { x: (1 - kp[23].x) * W, y: kp[23].y * H };
-      const RH = { x: (1 - kp[24].x) * W, y: kp[24].y * H };
+      // ─────────────────────────────────────────────────────────────
+      // 3. BODY MEASUREMENT — compute buyer's body box in pixels
+      //
+      //    X is flipped (1 - kp.x) to undo Agora's mirrored video.
+      //    This gives real left/right positions on screen.
+      // ─────────────────────────────────────────────────────────────
+      const LS = { x: (1 - kp[11].x) * W, y: kp[11].y * H }; // left  shoulder
+      const RS = { x: (1 - kp[12].x) * W, y: kp[12].y * H }; // right shoulder
+      const LH = { x: (1 - kp[23].x) * W, y: kp[23].y * H }; // left  hip
+      const RH = { x: (1 - kp[24].x) * W, y: kp[24].y * H }; // right hip
 
-      // 4. Shoulder width in px
+      // Shoulder width in pixels (actual measured body width)
       const shoulderWidth_px = Math.hypot(LS.x - RS.x, LS.y - RS.y);
 
-      // 5. Torso center + hip center
+      // Torso centre points
       const midShoulder = { x: (LS.x + RS.x) / 2, y: (LS.y + RS.y) / 2 };
-      const midHip = { x: (LH.x + RH.x) / 2, y: (LH.y + RH.y) / 2 };
+      const midHip      = { x: (LH.x + RH.x) / 2, y: (LH.y + RH.y) / 2 };
 
-      // 6. Shoulder-to-hip distance (torso height)
-      const torsoHeight = Math.abs(midHip.y - midShoulder.y);
+      // Torso height in pixels — shoulder midpoint → hip midpoint
+      const torsoHeight_px = Math.abs(midHip.y - midShoulder.y);
 
-      // 7. Shift shoulder anchor UP to compensate for MediaPipe detecting joint center, not top of shoulder
-      midShoulder.y -= torsoHeight * SHOULDER_Y_OFFSET;
+      // Guard: skip if measurements are degenerate (buyer too far/partial)
+      if (shoulderWidth_px < 10 || torsoHeight_px < 10) {
+        rafRef.current = requestAnimationFrame(renderFrame);
+        return;
+      }
 
-      // ── Draw garment (only if loaded) ──
+      // ─────────────────────────────────────────────────────────────
+      // 4. MEASUREMENT-BASED GARMENT SIZING
+      //
+      //    Width  = shoulder_px × GARMENT_SHOULDER_SCALE
+      //    Height = torso_px    × GARMENT_TORSO_SCALE
+      //
+      //    These are INDEPENDENT — the garment image is stretched both
+      //    horizontally and vertically to match the buyer's body box.
+      //    A tall buyer gets a taller garment; a wide buyer gets a wider
+      //    garment — regardless of the garment's original aspect ratio.
+      // ─────────────────────────────────────────────────────────────
+      const {
+        GARMENT_SHOULDER_SCALE,
+        GARMENT_TORSO_SCALE,
+        GARMENT_NECK_OFFSET,
+        SHOULDER_Y_OFFSET,
+      } = AR_CONFIG;
+
+      const drawWidth  = shoulderWidth_px * GARMENT_SHOULDER_SCALE;
+      const drawHeight = torsoHeight_px   * GARMENT_TORSO_SCALE;
+
+      // ─────────────────────────────────────────────────────────────
+      // 5. ANCHOR POSITION
+      //
+      //    MediaPipe reports the *joint centre*, not the top of shoulder.
+      //    Shift anchor UP by SHOULDER_Y_OFFSET so the overlay starts at
+      //    approximately the actual shoulder-top / collar line.
+      //    Then shift top of garment UP by GARMENT_NECK_OFFSET for collar.
+      // ─────────────────────────────────────────────────────────────
+      const anchorY = midShoulder.y - torsoHeight_px * SHOULDER_Y_OFFSET;
+      const xPos    = midShoulder.x - drawWidth / 2;
+      const yPos    = anchorY - torsoHeight_px * GARMENT_NECK_OFFSET;
+
+      // 6. Draw garment: stretched independently in both axes to match body box
       if (garment) {
-        const scaledWidth = shoulderWidth_px * GARMENT_SHOULDER_PADDING;
-        let scaledHeight = garment.naturalHeight * (scaledWidth / garment.naturalWidth);
-
-        // Clamp garment height to not extend too far below the hips
-        const maxHeight = torsoHeight * GARMENT_MAX_HEIGHT_RATIO;
-        if (scaledHeight > maxHeight && maxHeight > 0) {
-          scaledHeight = maxHeight;
-        }
-
-        // Apply slight horizontal overhang for natural draping
-        const xPos = midShoulder.x - scaledWidth / 2 - (shoulderWidth_px * GARMENT_X_OVERHANG);
-        const yPos = midShoulder.y - scaledHeight * GARMENT_Y_NECKLINE;
-
         ctx.globalAlpha = 0.92;
-        ctx.drawImage(garment, xPos, yPos, scaledWidth, scaledHeight);
+        ctx.drawImage(garment, xPos, yPos, drawWidth, drawHeight);
         ctx.globalAlpha = 1.0;
       }
 

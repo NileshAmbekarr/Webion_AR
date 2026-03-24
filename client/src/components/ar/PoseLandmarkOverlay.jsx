@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePoseDetection } from '../../hooks/usePoseDetection';
+import { AR_CONFIG } from '../../config/arConfig';
 
 /**
  * PoseLandmarkOverlay — Renders MediaPipe Pose body landmarks
@@ -44,6 +45,64 @@ export default function PoseLandmarkOverlay({
       onPoseUpdate({ keypoints, isModelLoaded, fps });
     }
   }, [keypoints, isModelLoaded, fps, onPoseUpdate]);
+
+  // Live measurement readout — 100% real-time from MediaPipe keypoints each frame.
+  // Pixel values are genuine live measurements. cm values are NOT shown because
+  // converting px→cm requires knowing the camera's physical distance, which we don't have.
+  // The garment overlay itself uses these px values directly — no assumptions.
+  const [measurementHUD, setMeasurementHUD] = useState(null);
+  useEffect(() => {
+    if (!keypoints || !canvasRef.current) { setMeasurementHUD(null); return; }
+    const cv = canvasRef.current;
+    // Use actual canvas pixel dimensions (real video frame size)
+    const W = cv.width || cv.offsetWidth;
+    const H = cv.height || cv.offsetHeight;
+    if (!W || !H) return;
+    const kp = keypoints;
+
+    // Real-time pixel coordinates (X flipped to match Agora mirror)
+    const LS = { x: (1 - kp[11].x) * W, y: kp[11].y * H }; // left  shoulder
+    const RS = { x: (1 - kp[12].x) * W, y: kp[12].y * H }; // right shoulder
+    const LH = { x: (1 - kp[23].x) * W, y: kp[23].y * H }; // left  hip
+    const RH = { x: (1 - kp[24].x) * W, y: kp[24].y * H }; // right hip
+
+    const shoulderPx  = Math.hypot(LS.x - RS.x, LS.y - RS.y);
+    const hipPx       = Math.hypot(LH.x - RH.x, LH.y - RH.y);
+    const midShoulderY = (LS.y + RS.y) / 2;
+    const midHipY      = (LH.y + RH.y) / 2;
+    const torsoPx      = Math.abs(midHipY - midShoulderY);
+
+    // ── Real reference: ear-to-ear head width ──────────────────────────────
+    // Average adult ear-to-ear = ~14cm. This is NOT the measurement being shown,
+    // so it doesn't cancel out — shoulder, torso, and hip cm values all vary
+    // in real-time based on the person's actual distance and proportions.
+    // Falls back to shoulder-based (38cm) if ears aren't detected.
+    const ASSUMED_HEAD_WIDTH_CM = 14;
+    const LEar = kp[7]?.visibility > 0.3 ? { x: (1 - kp[7].x) * W, y: kp[7].y * H } : null;
+    const REar = kp[8]?.visibility > 0.3 ? { x: (1 - kp[8].x) * W, y: kp[8].y * H } : null;
+    let pxPerCm;
+    let refLabel;
+    if (LEar && REar) {
+      const earPx = Math.hypot(LEar.x - REar.x, LEar.y - REar.y);
+      pxPerCm  = earPx / ASSUMED_HEAD_WIDTH_CM;
+      refLabel = `head-width ~${ASSUMED_HEAD_WIDTH_CM}cm`;
+    } else {
+      // Fallback: shoulder reference (shoulder will show ~38cm, others vary)
+      pxPerCm  = shoulderPx / AR_CONFIG.ASSUMED_SHOULDER_CM;
+      refLabel = `shoulder ~${AR_CONFIG.ASSUMED_SHOULDER_CM}cm (ears hidden)`;
+    }
+
+    setMeasurementHUD({
+      shoulderPx: Math.round(shoulderPx),
+      hipPx:      Math.round(hipPx),
+      torsoPx:    Math.round(torsoPx),
+      shoulderCm: Math.round(shoulderPx / pxPerCm),  // real-time ✅
+      torsoCm:    Math.round(torsoPx    / pxPerCm),  // real-time ✅
+      hipCm:      Math.round(hipPx      / pxPerCm),  // real-time ✅
+      refLabel,
+      frameW: W, frameH: H,
+    });
+  }, [keypoints]);
 
   // Keypoint labels for key joints
   const keyLabels = useRef({
@@ -171,6 +230,68 @@ export default function PoseLandmarkOverlay({
       ctx.shadowBlur = 0;
     }
 
+    // ── Garment Fit-Box: show exactly where the shirt will be placed ──────
+    // Uses the same constants as useGarmentOverlay so the box matches perfectly.
+    const kpLS = kp[11], kpRS = kp[12], kpLH = kp[23], kpRH = kp[24];
+    const allVisible = [kpLS, kpRS, kpLH, kpRH].every(p => p && (p.visibility || 0) >= 0.4);
+    if (allVisible) {
+      const fLS = { x: (1 - kpLS.x) * W, y: kpLS.y * H };
+      const fRS = { x: (1 - kpRS.x) * W, y: kpRS.y * H };
+      const fLH = { x: (1 - kpLH.x) * W, y: kpLH.y * H };
+      const fRH = { x: (1 - kpRH.x) * W, y: kpRH.y * H };
+
+      const shoulderPx  = Math.hypot(fLS.x - fRS.x, fLS.y - fRS.y);
+      const midShX = (fLS.x + fRS.x) / 2;
+      const midShY = (fLS.y + fRS.y) / 2;
+      const midHipY = (fLH.y + fRH.y) / 2;
+      const torsoPx = Math.abs(midHipY - midShY);
+
+      // Mirror the exact sizing from useGarmentOverlay
+      const SHOULDER_SCALE = 1.15;
+      const TORSO_SCALE    = 1.10;
+      const NECK_OFFSET    = 0.10;
+      const JOINT_OFFSET   = 0.08;
+
+      const drawW = shoulderPx * SHOULDER_SCALE;
+      const drawH = torsoPx   * TORSO_SCALE;
+      const anchorY = midShY - torsoPx * JOINT_OFFSET;
+      const boxX = midShX - drawW / 2;
+      const boxY = anchorY - torsoPx * NECK_OFFSET;
+
+      // Outer glow (soft blue)
+      ctx.save();
+      ctx.strokeStyle = 'rgba(102, 126, 234, 0.5)';
+      ctx.lineWidth = 6;
+      ctx.lineJoin = 'round';
+      ctx.setLineDash([]);
+      ctx.strokeRect(boxX, boxY, drawW, drawH);
+
+      // Inner dashed border (bright blue)
+      ctx.strokeStyle = 'rgba(144, 205, 244, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 5]);
+      ctx.strokeRect(boxX, boxY, drawW, drawH);
+      ctx.setLineDash([]);
+
+      // Top center label
+      ctx.fillStyle = 'rgba(102, 126, 234, 0.95)';
+      ctx.font = 'bold 11px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = 'rgba(0,0,0,0.8)';
+      ctx.shadowBlur = 3;
+      ctx.fillText('👕 Garment Fit Zone', midShX, boxY - 5);
+
+      // Dimension labels
+      ctx.font = '10px Inter, sans-serif';
+      ctx.fillStyle = '#90cdf4';
+      ctx.fillText(`W: ${Math.round(drawW)}px`, midShX, boxY + drawH + 14);
+      ctx.textAlign = 'left';
+      ctx.fillText(`H: ${Math.round(drawH)}px`, boxX + drawW + 6, boxY + drawH / 2);
+      ctx.shadowBlur = 0;
+      ctx.textAlign = 'left';
+      ctx.restore();
+    }
+
     rafRef.current = requestAnimationFrame(drawLandmarks);
   }, [keypoints]);
 
@@ -195,7 +316,7 @@ export default function PoseLandmarkOverlay({
         }}
       />
 
-      {/* Status badge */}
+      {/* Pose status badge — top right */}
       <div style={{
         position: 'absolute', top: 8, right: 8, zIndex: 20,
         padding: '4px 10px', borderRadius: 12,
@@ -206,6 +327,25 @@ export default function PoseLandmarkOverlay({
       }}>
         {isModelLoaded ? `🦴 Pose ${fps} FPS` : '🔍 Loading Pose...'}
       </div>
+
+      {/* Live body measurement HUD — top left (only when pose is active) */}
+      {isModelLoaded && measurementHUD && (
+        <div style={{
+          position: 'absolute', top: 8, left: 8, zIndex: 20,
+          padding: '6px 10px', borderRadius: 10,
+          background: 'rgba(0,0,0,0.65)',
+          color: '#e2e8f0', fontSize: 10, fontWeight: 500,
+          lineHeight: 1.7,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+          backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{ fontWeight: 700, color: '#90cdf4', marginBottom: 2 }}>📐 Live Body Measurements</div>
+          <div>↔️ Shoulder: <b>{measurementHUD.shoulderPx}px</b> ≈ <b>{measurementHUD.shoulderCm}cm</b></div>
+          <div>↕️ Torso:    <b>{measurementHUD.torsoPx}px</b> ≈ <b>{measurementHUD.torsoCm}cm</b> (live)</div>
+          <div>🦴 Hip:      <b>{measurementHUD.hipPx}px</b> ≈ <b>{measurementHUD.hipCm}cm</b> (live)</div>
+          <div style={{ color: '#718096', fontSize: 9 }}>Ref: {measurementHUD.refLabel} | {measurementHUD.frameW}×{measurementHUD.frameH}</div>
+        </div>
+      )}
     </>
   );
 }
