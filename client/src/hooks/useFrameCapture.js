@@ -17,108 +17,63 @@ const {
  * useFrameCapture — Captures frames from the seller's local video,
  * scores quality, and triggers capture after stable period.
  *
- * Mannequin detection uses MediaPipe Pose to verify:
- * - Shoulders visible, torso centered, body large enough, hips visible.
+ * Mannequin detection uses lightweight canvas analysis (no WASM)
+ * to avoid conflicts with buyer's MediaPipe Pose instance.
  */
-
-// ── Seller-side Pose singleton for mannequin detection ──
-let sellerPoseInstance = null;
-let sellerPoseInitPromise = null;
-let lastPoseResult = null;
-
-async function initSellerPose() {
-  if (sellerPoseInstance) return sellerPoseInstance;
-  if (sellerPoseInitPromise) return sellerPoseInitPromise;
-
-  const Pose = window.Pose;
-  if (!Pose) {
-    console.warn('[FrameCapture] MediaPipe Pose CDN not loaded — mannequin check will auto-pass');
-    return null;
-  }
-
-  sellerPoseInitPromise = (async () => {
-    const pose = new Pose({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
-    });
-    pose.setOptions({
-      modelComplexity: 0, // Lite model — fast for seller-side checks
-      smoothLandmarks: false,
-      enableSegmentation: false,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-    });
-    pose.onResults((results) => {
-      lastPoseResult = results;
-    });
-    await pose.initialize();
-    sellerPoseInstance = pose;
-    console.log('[FrameCapture] ✅ Seller Pose model initialized');
-    return pose;
-  })();
-
-  return sellerPoseInitPromise;
-}
 
 /**
- * Detect mannequin/person in the frame using Pose landmarks.
- * Returns { detected, centered, largeEnough, hipsVisible, warnings[] }
+ * Lightweight mannequin detection — NO MediaPipe, NO WASM.
+ * Checks if there's a significant object in the center of the frame
+ * by comparing edge density in center vs corners.
  */
-async function detectMannequin(canvas) {
-  const pose = await initSellerPose();
-  if (!pose) return { detected: true, warnings: [] }; // Fallback if CDN missing
-
-  lastPoseResult = null;
-  try {
-    await pose.send({ image: canvas });
-  } catch (e) {
-    console.warn('[FrameCapture] Pose send failed:', e.message);
-    return { detected: true, warnings: [] }; // Don't block on error
-  }
-
-  const results = lastPoseResult;
-  if (!results || !results.poseLandmarks || results.poseLandmarks.length < 25) {
-    return { detected: false, warnings: ['no_body'] };
-  }
-
-  const kp = results.poseLandmarks;
+function detectMannequinSimple(imageData) {
+  const { data, width, height } = imageData;
   const warnings = [];
-  let detected = true;
 
-  // 1. Shoulders visible (keypoints 11, 12)
-  const ls = kp[11];
-  const rs = kp[12];
-  if (!ls || !rs || (ls.visibility || 0) < 0.5 || (rs.visibility || 0) < 0.5) {
-    warnings.push('shoulders_not_visible');
-    detected = false;
-  }
-
-  // 2. Torso centered (shoulder midpoint between 20%-80% of frame width)
-  if (detected) {
-    const midX = (ls.x + rs.x) / 2;
-    if (midX < 0.3 || midX > 0.7) {
-      warnings.push('not_centered');
-      detected = false;
+  // Helper: calculate edge density in a region
+  function edgeDensity(startX, startY, regionW, regionH) {
+    let edges = 0;
+    let count = 0;
+    for (let y = startY; y < startY + regionH && y < height - 1; y++) {
+      for (let x = startX; x < startX + regionW && x < width - 1; x++) {
+        const idx = (y * width + x) * 4;
+        const idxR = (y * width + x + 1) * 4;
+        const idxD = ((y + 1) * width + x) * 4;
+        const dx = Math.abs(data[idx] - data[idxR]) + Math.abs(data[idx+1] - data[idxR+1]) + Math.abs(data[idx+2] - data[idxR+2]);
+        const dy = Math.abs(data[idx] - data[idxD]) + Math.abs(data[idx+1] - data[idxD+1]) + Math.abs(data[idx+2] - data[idxD+2]);
+        if (dx + dy > 30) edges++;
+        count++;
+      }
     }
+    return count > 0 ? edges / count : 0;
   }
 
-  // 3. Body large enough (shoulder width > 25% of frame)
-  if (detected) {
-    const shoulderWidth = Math.abs(ls.x - rs.x);
-    if (shoulderWidth < 0.25) {
-      warnings.push('too_far');
-      detected = false;
-    }
+  const regionW = Math.floor(width * 0.3);
+  const regionH = Math.floor(height * 0.3);
+
+  // Center region
+  const centerX = Math.floor(width * 0.35);
+  const centerY = Math.floor(height * 0.25);
+  const centerEdge = edgeDensity(centerX, centerY, regionW, regionH);
+
+  // Corner regions (average of top-left and top-right)
+  const tlEdge = edgeDensity(0, 0, regionW, regionH);
+  const trEdge = edgeDensity(width - regionW, 0, regionW, regionH);
+  const cornerEdge = (tlEdge + trEdge) / 2;
+
+  // 1. Center must have meaningful content (edge density > 5%)
+  if (centerEdge < 0.05) {
+    warnings.push('no_object_detected');
+    return { detected: false, warnings };
   }
 
-  // 4. Hips visible (keypoints 23, 24)
-  const lh = kp[23];
-  const rh = kp[24];
-  if (!lh || !rh || (lh.visibility || 0) < 0.3 || (rh.visibility || 0) < 0.3) {
-    warnings.push('hips_not_visible');
-    // Don't fail entirely — hips might be partially occluded
+  // 2. Center should have more edges than corners (object in middle)
+  if (centerEdge < cornerEdge * 1.2) {
+    warnings.push('not_centered');
+    return { detected: false, warnings };
   }
 
-  return { detected, warnings };
+  return { detected: true, warnings };
 }
 export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptureComplete, onCaptureError) {
   const [captureStatus, setCaptureStatus] = useState('idle');
@@ -278,8 +233,8 @@ export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptur
         frameDelta: 255,
       };
 
-      // 0. Mannequin detection (MediaPipe Pose on seller's frame)
-      const mannequinResult = await detectMannequin(hiddenCanvasRef.current);
+      // 0. Mannequin detection (lightweight edge-density, no WASM)
+      const mannequinResult = detectMannequinSimple(frameData);
       details.mannequin = mannequinResult.detected;
       if (!mannequinResult.detected) {
         warnings.push(...mannequinResult.warnings);
