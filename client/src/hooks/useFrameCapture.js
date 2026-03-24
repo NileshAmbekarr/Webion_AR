@@ -95,16 +95,16 @@ async function detectMannequin(canvas) {
   // 2. Torso centered (shoulder midpoint between 20%-80% of frame width)
   if (detected) {
     const midX = (ls.x + rs.x) / 2;
-    if (midX < 0.2 || midX > 0.8) {
+    if (midX < 0.3 || midX > 0.7) {
       warnings.push('not_centered');
       detected = false;
     }
   }
 
-  // 3. Body large enough (shoulder width > 15% of frame)
+  // 3. Body large enough (shoulder width > 25% of frame)
   if (detected) {
     const shoulderWidth = Math.abs(ls.x - rs.x);
-    if (shoulderWidth < 0.15) {
+    if (shoulderWidth < 0.25) {
       warnings.push('too_far');
       detected = false;
     }
