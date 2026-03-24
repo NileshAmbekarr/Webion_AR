@@ -28,7 +28,7 @@ export const AR_CONFIG = {
   GARMENT_SHOULDER_SCALE: 1.2,      // garment draw-width  = shoulderWidth_px × scale (adds sleeve room)
   GARMENT_TORSO_SCALE: 1.6,         // garment draw-height = torsoHeight_px  × scale (adds hem drape)
   GARMENT_NECK_OFFSET: 0.10,         // shift garment top UP by 10% of torso height (collar placement)
-  SHOULDER_Y_OFFSET: 0.08,           // shift shoulder anchor UP by 8% of torso (MediaPipe joint-center correction)
+  SHOULDER_Y_OFFSET: 0.1,           // shift shoulder anchor UP by 8% of torso (MediaPipe joint-center correction)
 
   // --- Buyer Distance Rules (Track B/C) ---
   BUYER_TOO_CLOSE_THRESHOLD: 0.45,   // Shoulder width > 45% of frame = too close
