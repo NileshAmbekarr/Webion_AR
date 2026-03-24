@@ -6,6 +6,7 @@ const {
   GARMENT_X_OVERHANG,
   GARMENT_Y_NECKLINE,
   GARMENT_MAX_HEIGHT_RATIO,
+  SHOULDER_Y_OFFSET,
 } = AR_CONFIG;
 
 /**
@@ -95,6 +96,9 @@ export function useGarmentOverlay(canvasRef, videoRef, keypoints, garmentUrl) {
 
       // 6. Shoulder-to-hip distance (torso height)
       const torsoHeight = Math.abs(midHip.y - midShoulder.y);
+
+      // 7. Shift shoulder anchor UP to compensate for MediaPipe detecting joint center, not top of shoulder
+      midShoulder.y -= torsoHeight * SHOULDER_Y_OFFSET;
 
       // ── Draw garment (only if loaded) ──
       if (garment) {
