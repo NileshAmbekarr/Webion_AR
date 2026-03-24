@@ -17,9 +17,109 @@ const {
  * useFrameCapture — Captures frames from the seller's local video,
  * scores quality, and triggers capture after stable period.
  *
- * SIMPLIFIED for hackathon: mannequin check auto-passes (MediaPipe is heavy),
- * focus is on lighting + stability + sharpness.
+ * Mannequin detection uses MediaPipe Pose to verify:
+ * - Shoulders visible, torso centered, body large enough, hips visible.
  */
+
+// ── Seller-side Pose singleton for mannequin detection ──
+let sellerPoseInstance = null;
+let sellerPoseInitPromise = null;
+let lastPoseResult = null;
+
+async function initSellerPose() {
+  if (sellerPoseInstance) return sellerPoseInstance;
+  if (sellerPoseInitPromise) return sellerPoseInitPromise;
+
+  const Pose = window.Pose;
+  if (!Pose) {
+    console.warn('[FrameCapture] MediaPipe Pose CDN not loaded — mannequin check will auto-pass');
+    return null;
+  }
+
+  sellerPoseInitPromise = (async () => {
+    const pose = new Pose({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
+    });
+    pose.setOptions({
+      modelComplexity: 0, // Lite model — fast for seller-side checks
+      smoothLandmarks: false,
+      enableSegmentation: false,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+    pose.onResults((results) => {
+      lastPoseResult = results;
+    });
+    await pose.initialize();
+    sellerPoseInstance = pose;
+    console.log('[FrameCapture] ✅ Seller Pose model initialized');
+    return pose;
+  })();
+
+  return sellerPoseInitPromise;
+}
+
+/**
+ * Detect mannequin/person in the frame using Pose landmarks.
+ * Returns { detected, centered, largeEnough, hipsVisible, warnings[] }
+ */
+async function detectMannequin(canvas) {
+  const pose = await initSellerPose();
+  if (!pose) return { detected: true, warnings: [] }; // Fallback if CDN missing
+
+  lastPoseResult = null;
+  try {
+    await pose.send({ image: canvas });
+  } catch (e) {
+    console.warn('[FrameCapture] Pose send failed:', e.message);
+    return { detected: true, warnings: [] }; // Don't block on error
+  }
+
+  const results = lastPoseResult;
+  if (!results || !results.poseLandmarks || results.poseLandmarks.length < 25) {
+    return { detected: false, warnings: ['no_body'] };
+  }
+
+  const kp = results.poseLandmarks;
+  const warnings = [];
+  let detected = true;
+
+  // 1. Shoulders visible (keypoints 11, 12)
+  const ls = kp[11];
+  const rs = kp[12];
+  if (!ls || !rs || (ls.visibility || 0) < 0.5 || (rs.visibility || 0) < 0.5) {
+    warnings.push('shoulders_not_visible');
+    detected = false;
+  }
+
+  // 2. Torso centered (shoulder midpoint between 20%-80% of frame width)
+  if (detected) {
+    const midX = (ls.x + rs.x) / 2;
+    if (midX < 0.2 || midX > 0.8) {
+      warnings.push('not_centered');
+      detected = false;
+    }
+  }
+
+  // 3. Body large enough (shoulder width > 15% of frame)
+  if (detected) {
+    const shoulderWidth = Math.abs(ls.x - rs.x);
+    if (shoulderWidth < 0.15) {
+      warnings.push('too_far');
+      detected = false;
+    }
+  }
+
+  // 4. Hips visible (keypoints 23, 24)
+  const lh = kp[23];
+  const rh = kp[24];
+  if (!lh || !rh || (lh.visibility || 0) < 0.3 || (rh.visibility || 0) < 0.3) {
+    warnings.push('hips_not_visible');
+    // Don't fail entirely — hips might be partially occluded
+  }
+
+  return { detected, warnings };
+}
 export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptureComplete, onCaptureError) {
   const [captureStatus, setCaptureStatus] = useState('idle');
   const [countdown, setCountdown] = useState(0);
@@ -170,7 +270,7 @@ export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptur
 
       const warnings = [];
       const details = {
-        mannequin: true, // Auto-pass for hackathon demo
+        mannequin: false,
         lighting: false,
         stability: false,
         sharpness: 0,
@@ -178,6 +278,12 @@ export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptur
         frameDelta: 255,
       };
 
+      // 0. Mannequin detection (MediaPipe Pose on seller's frame)
+      const mannequinResult = await detectMannequin(hiddenCanvasRef.current);
+      details.mannequin = mannequinResult.detected;
+      if (!mannequinResult.detected) {
+        warnings.push(...mannequinResult.warnings);
+      }
       // 1. Sharpness
       const sharpness = calculateSharpness(frameData);
       details.sharpness = sharpness;
@@ -213,7 +319,7 @@ export function useFrameCapture(sellerVideoRef, isCapturing, sessionId, onCaptur
 
       // Log every frame — use console.log not console.debug so it shows in Chrome
       console.log(
-        `[FrameCapture] mannequin=✓ lighting=${details.lighting ? '✓' : '✗'}(${Math.round(luminance)}) ` +
+        `[FrameCapture] mannequin=${details.mannequin ? '✓' : '✗'}${mannequinResult.warnings.length ? '(' + mannequinResult.warnings.join(',') + ')' : ''} lighting=${details.lighting ? '✓' : '✗'}(${Math.round(luminance)}) ` +
         `stability=${details.stability ? '✓' : '✗'}(Δ${Math.round(details.frameDelta * 10) / 10}) ` +
         `sharp=${Math.round(sharpness)} | ` +
         (stableStartRef.current
