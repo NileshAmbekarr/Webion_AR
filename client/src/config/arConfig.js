@@ -22,7 +22,7 @@ export const AR_CONFIG = {
   MIN_KEYPOINT_VISIBILITY: 0.5,      // Minimum visibility for shoulder/hip keypoints
   GARMENT_SHOULDER_PADDING: 1.6,    // 60% padding beyond shoulders for larger overlay
   GARMENT_X_OVERHANG: 0.075,         // Slight left overhang ratio
-  GARMENT_Y_NECKLINE: 0.05,          // Neckline offset ratio
+  GARMENT_Y_NECKLINE: 0.18,          // Neckline offset — 18% above shoulder midpoint
 
   // --- Buyer Distance Rules (Track B/C) ---
   BUYER_TOO_CLOSE_THRESHOLD: 0.45,   // Shoulder width > 45% of frame = too close
